@@ -53,9 +53,9 @@
 ### 4. 参数建议（节点级）
 | 参数名 | 默认值 | 说明 |
 | :--- | :--- | :--- |
-| `input_image_topic` | `/camera/image_raw` | 相机输入 topic |
-| `output_topic` | `/perception/apriltag_detections` | 输出 topic（建议固定，仅调试场景可覆写） |
-| `frame_id` | `camera_link` | 输出坐标系 |
+| `input_image_topic` | `/camera/device` | 相机输入 topic |
+| `output_topic` | `/perception/apriltag_detections/device` | 输出 topic（建议固定，仅调试场景可覆写） |
+| `frame_id` | `device` | 输出坐标系 |
 | `publish_rate_hz` | `10.0` | 发布频率 |
 | `tag_family` | `tag36h11` | AprilTag family |
 | `tag_size_m` | `0.16` | 标签物理边长（米） |
