@@ -20,16 +20,19 @@
 ### 2. 输入数据与控制目标
 
 #### 2.1 输入字段含义
-| 字段 | 作用 |
-| :--- | :--- |
-| `id` | 目标标签编号，用于区分不同任务点位或优先级。 |
-| `distance` | 与目标的直线距离，决定前进/后退量。 |
-| `center_offset_x` | 水平偏差，决定转向或横移。 |
-| `center_offset_y` | 垂直偏差，决定俯仰或高度微调。 |
-| `roll` | 目标平面翻滚角，用于姿态校正。 |
-| `yaw` | 目标偏航角，用于转向对齐。 |
-| `pitch` | 目标俯仰角，用于上下对正。 |
-| `hamming` | 置信度判定指标，用于过滤低质量检测。 |
+
+字段语义、单位与取值范围默认继承 `RFC 001`；下表给出本 RFC 实现时直接使用的约束。
+
+| 字段 | 单位/范围 | 作用 |
+| :--- | :--- | :--- |
+| `id` | 非负整数 | 目标标签编号，用于区分不同任务点位或优先级。 |
+| `distance` | mm，`> 0` | 与目标的直线距离，决定前进/后退量。 |
+| `center_offset_x` | 归一化，`[-1, 1]` | 水平偏差，决定转向或横移。 |
+| `center_offset_y` | 归一化，`[-1, 1]` | 垂直偏差，用于上下微调。 |
+| `roll` | deg（角度） | 目标平面翻滚角，可用于姿态校正。 |
+| `yaw` | deg（角度） | 目标偏航角，用于转向对齐。 |
+| `pitch` | deg（角度） | 目标俯仰角，用于上下对正。 |
+| `hamming` | 非负整数，越小越可信 | 置信度判定指标，用于过滤低质量检测。 |
 
 #### 2.2 控制目标
 控制器应把机器人状态从“未对齐”收敛到“目标对齐”状态。对单个目标，可将目标状态定义为：
@@ -40,12 +43,12 @@ $$
 
 ---
 
-### 3. 场景化控制规则（替代复杂公式）
+### 3. 场景化控制规则
 
 本节直接给出“在什么情况下，机器人怎么走、调用哪个动作组”。
 动作组均来自 `https://github.com/Hiwonder/TonyPi/tree/main/ActionGroups`。
 
-#### 3.1 判定输入（仅保留实现需要）
+#### 3.1 判定输入
 每个控制周期只用以下信息做决策：
 1. 目标是否可见（`detections` 是否为空）。
 2. 目标是否可信（`hamming <= h_max`）。
@@ -66,7 +69,8 @@ $$
 | 目标在右边 | `center_offset_x > x_turn` | 先右转再判断 | `turn_right_small_step`（偏差大可用 `turn_right`） |
 | 目标在左边 | `center_offset_x < -x_turn` | 先左转再判断 | `turn_left_small_step`（偏差大可用 `turn_left`） |
 | 方向基本对正但距离远 | `abs(center_offset_x) <= x_turn` 且 `distance > d_far` | 向前接近 | `go_forward_start` -> `go_forward` |
-| 接近末段 | `d_near < distance <= d_far` | 小步接近，避免冲过头 | `go_forward_one_small_step` |
+| 中距离接近 | `d_near < distance <= d_far` | 常速接近 | `go_forward` |
+| 接近末段 | `d_stop_max < distance <= d_near` | 小步接近，避免冲过头 | `go_forward_one_small_step` |
 | 距离过近 | `distance < d_stop_min` | 后退拉开安全距离 | `back_one_step`（必要时 `back`） |
 | 已对正且到达工作距离 | `abs(center_offset_x) <= x_align` 且 `d_stop_min <= distance <= d_stop_max` | 停止并保持稳定 | `go_forward_end` -> `stand` 或 `stand_slow` |
 | 低置信度 | `hamming > h_max` | 不执行激烈动作，保持姿态 | `stand` |
@@ -78,7 +82,7 @@ $$
 
 ---
 
-### 4. 多目标选择（简化版）
+### 4. 多目标选择
 同一帧有多个目标时，按以下顺序选一个：
 1. 先过滤 `hamming > h_max` 的目标。
 2. 若配置了任务 `id`，优先选指定 `id`。
@@ -96,6 +100,15 @@ $$
 
 ---
 
+### 6. 搜索执行规则（跨 tick 交替）
+为避免同一周期内左右动作互相抵消，搜索状态按以下规则执行：
+1. 每个控制 tick 只允许执行一个搜索动作。
+2. 维护 `search_dir` 状态（`left` 或 `right`）。
+3. 本 tick 执行 `search_dir` 指定方向后，翻转 `search_dir`，下一 tick 再执行另一方向。
+4. 若重新检测到有效目标，立即退出搜索并进入转向/接近状态。
+
+---
+
 ### 7. 安全与降级策略
 1. **空数组处理：** 若 `detections` 为空，输出搜索/保持命令，不进入激烈控制。  
 2. **超时处理：** 若消息超时，则将控制量降为零或保持上一稳定状态。  
@@ -109,7 +122,7 @@ $$
 | 参数名 | 默认值 | 说明 |
 | :--- | :--- | :--- |
 | `d_far` | `900` | 远距离阈值（mm），大于此值进入快速接近 |
-| `d_near` | `650` | 近距离阈值（mm），小于此值切小步接近 |
+| `d_near` | `750` | 近距离阈值（mm），小于等于此值切小步接近 |
 | `d_stop_min` | `520` | 目标最小工作距离（mm） |
 | `d_stop_max` | `650` | 目标最大工作距离（mm） |
 | `h_max` | `2` | 最大可接受汉明距离 |
@@ -144,14 +157,24 @@ $$
 on_control_tick():
 	msg = latest_apriltag_msg()
 
+	# search_dir: 持久状态，left 或 right
 	if msg is None or timeout(msg):
-		run_action("turn_left_small_step")
-		run_action("turn_right_small_step")
+		if search_dir == "left":
+			run_action("turn_left_small_step")
+			search_dir = "right"
+		else:
+			run_action("turn_right_small_step")
+			search_dir = "left"
 		return
 
 	target = select_target(msg.detections, h_max, allowed_ids)
 	if target is None:
-		run_action("stand")
+		if search_dir == "left":
+			run_action("turn_left_small_step")
+			search_dir = "right"
+		else:
+			run_action("turn_right_small_step")
+			search_dir = "left"
 		return
 
 	x = target.center_offset_x
@@ -173,7 +196,11 @@ on_control_tick():
 		run_action_sequence(["go_forward_start", "go_forward"])
 		return
 
-	if d_stop_max < d <= d_far:
+	if d_near < d <= d_far:
+		run_action("go_forward")
+		return
+
+	if d_stop_max < d <= d_near:
 		run_action("go_forward_one_small_step")
 		return
 
