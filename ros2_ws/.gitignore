@@ -14,3 +14,6 @@
 *.tmp
 *.swp
 .DS_Store
+
+*.jpg
+*.png
