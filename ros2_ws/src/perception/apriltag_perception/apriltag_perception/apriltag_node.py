@@ -7,6 +7,7 @@ import numpy as np
 import rclpy
 from cv_bridge import CvBridge
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
 
 from apriltag_interfaces.msg import AprilTagDetection, AprilTagDetections
@@ -41,17 +42,17 @@ class AprilTagPerceptionNode(Node):
         self.declare_parameter("camera_cx", 0.0)
         self.declare_parameter("camera_cy", 0.0)
 
-        self.input_image_topic = self.get_parameter("input_image_topic").value
-        self.output_topic = self.get_parameter("output_topic").value
-        self.frame_id = self.get_parameter("frame_id").value
-        self.publish_rate_hz = float(self.get_parameter("publish_rate_hz").value)
-        self.tag_family = self.get_parameter("tag_family").value
-        self.tag_size_m = float(self.get_parameter("tag_size_m").value)
-        self.hamming_max = int(self.get_parameter("hamming_max").value)
-        self.camera_fx = float(self.get_parameter("camera_fx").value)
-        self.camera_fy = float(self.get_parameter("camera_fy").value)
-        self.camera_cx = float(self.get_parameter("camera_cx").value)
-        self.camera_cy = float(self.get_parameter("camera_cy").value)
+        self.input_image_topic: str = str(self.get_parameter("input_image_topic").value)
+        self.output_topic: str = str(self.get_parameter("output_topic").value)
+        self.frame_id: str = str(self.get_parameter("frame_id").value)
+        self.publish_rate_hz: float = float(self.get_parameter("publish_rate_hz").value)
+        self.tag_family: str = str(self.get_parameter("tag_family").value)
+        self.tag_size_m: float = float(self.get_parameter("tag_size_m").value)
+        self.hamming_max: int = int(self.get_parameter("hamming_max").value)
+        self.camera_fx: float = float(self.get_parameter("camera_fx").value)
+        self.camera_fy: float = float(self.get_parameter("camera_fy").value)
+        self.camera_cx: float = float(self.get_parameter("camera_cx").value)
+        self.camera_cy: float = float(self.get_parameter("camera_cy").value)
 
         if self.publish_rate_hz < 10.0:
             self.get_logger().warn("publish_rate_hz < 10, forcing to 10.0 to satisfy RFC")
@@ -67,9 +68,10 @@ class AprilTagPerceptionNode(Node):
         self.lock = threading.Lock()
         self.latest_image: Optional[np.ndarray] = None
 
-        self.publisher = self.create_publisher(AprilTagDetections, self.output_topic, 10)
+        self.qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)
+        self.publisher = self.create_publisher(AprilTagDetections, self.output_topic, self.qos)
         self.subscription = self.create_subscription(
-            Image, self.input_image_topic, self._image_callback, 10
+            Image, self.input_image_topic, self._image_callback, self.qos
         )
         self.timer = self.create_timer(1.0 / self.publish_rate_hz, self._publish_tick)
 
