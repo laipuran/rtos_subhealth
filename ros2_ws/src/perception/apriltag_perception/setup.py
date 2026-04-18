@@ -9,8 +9,8 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
-        (f"share/{package_name}/launch", ["launch/apriltag_perception.launch.py"]),
-        (f"share/{package_name}/config", ["config/apriltag_params.yaml"]),
+        (f"share/{package_name}/launch", ["launch/apriltag_perception.launch.py", "launch/apriltag_perception_test.launch.py"]),
+        (f"share/{package_name}/config", ["config/apriltag_params.yaml", "config/apriltag_test_params.yaml"]),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
