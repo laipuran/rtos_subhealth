@@ -1,0 +1,10 @@
+{
+    "cmake.ignoreCMakeListsMissing": true,
+    "python.analysis.extraPaths": [
+        "ros2_ws/install/apriltag_interfaces/lib/python3.8/site-packages"
+    ],
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportArgumentType": "none",
+        "reportGeneralTypeIssues": "none"
+    }
+}
