@@ -80,6 +80,50 @@ class AprilTagPerceptionNode(Node):
             f"rate={self.publish_rate_hz:.1f}Hz"
         )
 
+    def _estimate_pose_from_corners(
+        self,
+        corners: np.ndarray,
+    ) -> Optional[Tuple[float, float, float, float]]:
+        if self.tag_size_m <= 0.0:
+            return None
+
+        tag_half = self.tag_size_m / 2.0
+        object_points = np.array(
+            [
+                [-tag_half, -tag_half, 0.0],
+                [tag_half, -tag_half, 0.0],
+                [tag_half, tag_half, 0.0],
+                [-tag_half, tag_half, 0.0],
+            ],
+            dtype=np.float64,
+        )
+
+        image_points = np.asarray(corners, dtype=np.float64).reshape(4, 2)
+        camera_matrix = np.array(
+            [
+                [self.camera_fx, 0.0, self.camera_cx],
+                [0.0, self.camera_fy, self.camera_cy],
+                [0.0, 0.0, 1.0],
+            ],
+            dtype=np.float64,
+        )
+        distortion = np.zeros((5, 1), dtype=np.float64)
+
+        ok, rvec, tvec = cv2.solvePnP(
+            object_points,
+            image_points,
+            camera_matrix,
+            distortion,
+            flags=cv2.SOLVEPNP_IPPE_SQUARE,
+        )
+        if not ok:
+            return None
+
+        rot, _ = cv2.Rodrigues(rvec)
+        roll, yaw, pitch = rotation_matrix_to_rpy_degrees(rot)
+        distance_mm = float(np.linalg.norm(tvec) * 1000.0)
+        return distance_mm, roll, yaw, pitch
+
     def _image_callback(self, msg: Image) -> None:
         try:
             frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
@@ -110,20 +154,8 @@ class AprilTagPerceptionNode(Node):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         use_pose = all(v > 0.0 for v in [self.camera_fx, self.camera_fy, self.camera_cx, self.camera_cy])
-        detect_args = {
-            "estimate_tag_pose": use_pose,
-            "tag_size": self.tag_size_m,
-        }
-        if use_pose:
-            detect_args["camera_params"] = (
-                self.camera_fx,
-                self.camera_fy,
-                self.camera_cx,
-                self.camera_cy,
-            )
-
         try:
-            raw_detections = self.detector.detect(gray, **detect_args)
+            raw_detections = self.detector.detect(gray, estimate_tag_pose=False)
         except Exception as exc:  # pragma: no cover - runtime safety path
             self.get_logger().warn(f"Detector error: {exc}")
             return []
@@ -150,11 +182,10 @@ class AprilTagPerceptionNode(Node):
             yaw = 0.0
             pitch = 0.0
 
-            if use_pose and hasattr(det, "pose_t") and hasattr(det, "pose_R"):
-                pose_t = np.asarray(det.pose_t, dtype=np.float64).reshape(-1)
-                distance_mm = float(np.linalg.norm(pose_t) * 1000.0)
-                rot = np.asarray(det.pose_R, dtype=np.float64).reshape(3, 3)
-                roll, yaw, pitch = rotation_matrix_to_rpy_degrees(rot)
+            if use_pose and hasattr(det, "corners"):
+                pose = self._estimate_pose_from_corners(det.corners)
+                if pose is not None:
+                    distance_mm, roll, yaw, pitch = pose
 
             out = AprilTagDetection()
             out.id = int(det.tag_id)

@@ -10,7 +10,13 @@ setup(
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
         (f"share/{package_name}/launch", ["launch/camera_test_publisher.launch.py"]),
-        (f"share/{package_name}/config", ["config/camera_test_params.yaml"]),
+        (
+            f"share/{package_name}/config",
+            [
+                "config/camera_test_params.yaml",
+                "config/cyclonedds_eth1.xml",
+            ],
+        ),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
