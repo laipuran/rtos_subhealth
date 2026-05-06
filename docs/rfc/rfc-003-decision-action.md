@@ -2,7 +2,7 @@
 
 **状态：** 草案
 
-**修订日期：** 2026-05-04
+**修订日期：** 2026-05-06
 
 **摘要：** 本 RFC 固定“单一入口任务流”的决策-执行链路，定义动作任务的最小语义结构与执行反馈约定，用于 tag chaining 场景。
 
@@ -27,15 +27,16 @@
 | `priority` | int32 | 优先级，值越大越高 |
 | `route_id` | string | 预定义路线 ID（可选） |
 | `target_tags` | int32[] | 目标 tag 序列（可选） |
+| `target_task_id` | string | 控制类任务指向的目标任务（如 `cancel`），可选 |
 | `constraints` | map | 约束，如速度上限、最小安全距离 |
-| `deadline_ms` | int64 | 截止时间（可选） |
+| `deadline_ms` | int64 | 相对 `issue_time` 的超时(ms)，0 表示不设截止（可选） |
 | `issue_time` | Time | 任务下发时间 |
 
 #### 2.2 类型约定
 * **巡航任务：** `type=patrol_route`，使用 `route_id` 或 `target_tags`。
 * **点到点：** `type=go_to_tag`，使用 `target_tags`（长度=1）。
 * **等待：** `type=hold`，执行层进入停机等待状态。
-* **取消：** `type=cancel`，`task_id` 指向被取消任务。
+* **取消：** `type=cancel`，使用 `target_task_id` 指向被取消任务；`task_id` 仍为取消命令自身的全局唯一 ID。
 
 ---
 
