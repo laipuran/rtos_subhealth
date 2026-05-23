@@ -41,25 +41,26 @@
 **Goal 字段：**
 | 字段 | 类型 | 说明 |
 | :--- | :--- | :--- |
-| `type` | string | 任务类型：`patrol_route` / `go_to_tag` / `hold` |
+| `type` | string | 任务类型：`patrol` / `navigate` / `hold` |
 | `priority` | int32 | 优先级，值越大越高 |
-| `route_id` | string | 预定义路线 ID（可选） |
+| `route` | int32[] | 目标 tag 序列（可选） |
 | `target_tags` | int32[] | 目标 tag 序列（可选） |
 | `constraints` | map | 约束，如速度上限、最小安全距离 |
-| `deadline_ms` | int64 | 截止时间（可选） |
-| `issue_time` | Time | 任务下发时间 |
+| `deadline` | int64 | 截止时间（可选，毫秒） |
+| `timestamp` | Time | 任务下发时间 |
 
 **Feedback 字段：**
 | 字段 | 类型 | 说明 |
 | :--- | :--- | :--- |
-| `state` | string | `accepted`, `running`, `paused` |
-| `finished_stage` | int32 | 已完成阶段数 |
-| `total_stage` | int32 | 总阶段数 |
-| `current_tag` | int32 | 当前识别/对齐的 tag |
-| `next_tag` | int32 | 计划到达的下一个 tag |
+| `state` | string | `accepted`, `running`, `paused`, `stopped` |
+| `route` | int32[] | 当前任务的 tag 路线 |
+| `finished_stages` | int32 | 已完成阶段数 |
 | `error_code` | string | 失败或异常码（可选） |
-| `message` | string | 补充说明（可选） |
+| `result` | Result | 终态结果（可选） |
 | `timestamp` | Time | 状态时间戳 |
+
+**Error 码：**
+`NoErr`, `InvalidGoal`, `GraphMissing`, `UnknownTag`, `Unreachable`, `ConstraintViolation`, `InternalError`, `Timeout`
 
 **Result 字段：**
 | 字段 | 类型 | 说明 |
@@ -67,7 +68,7 @@
 | `final_state` | string | `succeeded`, `failed`, `canceled` |
 | `error_code` | string | 失败或异常码（可选） |
 | `message` | string | 补充说明（可选） |
-| `finished_time` | Time | 结束时间戳 |
+| `timestamp` | Time | 结束时间戳 |
 
 ---
 
@@ -91,7 +92,7 @@
 ## 8. 验证计划
 1. 所有任务类型均通过 `task` action 下发。
 2. cancel 后结果回传为 `canceled`。
-3. goal_id 全程可追踪，状态变化完整。
+3. task_id 由任务下发接口返回，全程可追踪，状态变化完整。
 4. `hold` 任务可使机器人停机等待。
 
 ---

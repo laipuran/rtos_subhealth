@@ -36,8 +36,8 @@ WebUI 通过 desc_layer 的 HTTP/WS 接口完成任务下发与状态订阅。
 ## 5. 关键接口
 **HTTP：**
 - `POST /api/v1/tasks`
-- `GET /api/v1/tasks/{goal_id}`
-- `POST /api/v1/tasks/{goal_id}/cancel`
+- `GET /api/v1/tasks/{task_id}`
+- `POST /api/v1/tasks/{task_id}/cancel`
 - `GET /api/v1/tasks`
 
 **WebSocket：**
@@ -45,10 +45,14 @@ WebUI 通过 desc_layer 的 HTTP/WS 接口完成任务下发与状态订阅。
 
 **字段映射：**
 1. 任务状态：`feedback.state`
-2. 阶段进度：`feedback.finished_stage` / `feedback.total_stage`
-3. 当前/下一 tag：`feedback.current_tag` / `feedback.next_tag`
-4. 终态：`result.final_state`
+2. 阶段进度：`feedback.finished_stages`
+3. 路线：`feedback.route`
+4. 终态：`feedback.result.final_state`
 5. 失败原因：`error_code` / `message`
+
+**HTTP 请求/响应：**
+1. `POST /api/v1/tasks` 请求体包含 `target_device` 与 `goal`，响应体返回 `task_id` 与 `status`。
+2. `GET /api/v1/tasks/{task_id}` 返回任务记录。
 
 ---
 
@@ -78,6 +82,7 @@ WebUI 通过 desc_layer 的 HTTP/WS 接口完成任务下发与状态订阅。
 ## 9. 未决问题
 1. WebUI 是否需要离线缓存与重连策略。
 2. 历史查询默认条数与分页方式。
+3. `GET /api/v1/tasks` 是否支持 `queryOptions`（过滤/分页/排序）及其字段定义。
 
 ---
 
