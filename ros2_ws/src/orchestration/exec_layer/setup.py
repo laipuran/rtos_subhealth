@@ -14,12 +14,13 @@ setup(
     zip_safe=True,
     maintainer="orchestration",
     maintainer_email="puranlai@qq.com",
-    description="Execution layer action server skeleton per RFC003/004.",
+    description="Execution layer action server with RobotInterface backends.",
     license="MIT",
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
             "exec_layer_node = exec_layer.exec_layer_node:main",
+            "simulated_tag_detector = exec_layer.robot.simulated_tag_detector:main",
         ],
     },
 )
