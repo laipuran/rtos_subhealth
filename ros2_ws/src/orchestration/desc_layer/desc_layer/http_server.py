@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from typing import Any, Optional
 
@@ -17,14 +18,17 @@ sock = Sock(app)
 
 task_store: TaskStore = None
 goal_queue: "queue.Queue[Optional[dict]]" = None
+maps_path: str = ""
 ws_clients: list = []
 _ws_lock = threading.Lock()
 
 
-def init_app(store: TaskStore, queue: "queue.Queue[Optional[dict]]") -> None:
-    global task_store, goal_queue
+def init_app(store: TaskStore, queue: "queue.Queue[Optional[dict]]",
+             maps_dir: str = "") -> None:
+    global task_store, goal_queue, maps_path
     task_store = store
     goal_queue = queue
+    maps_path = maps_dir
 
 
 def _json_resp(data: Any, status: int = 200) -> Response:
@@ -33,6 +37,20 @@ def _json_resp(data: Any, status: int = 200) -> Response:
         status=status,
         content_type="application/json",
     )
+
+
+def _load_map(scene: str = "default") -> Optional[dict]:
+    filepath = os.path.join(maps_path, f"{scene}.json")
+    if not os.path.exists(filepath):
+        return None
+    with open(filepath, "r") as f:
+        return json.load(f)
+
+
+def _save_map(data: dict, scene: str = "default") -> None:
+    filepath = os.path.join(maps_path, f"{scene}.json")
+    with open(filepath, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
 
 def _validate_goal(body: dict) -> Optional[tuple[str, int]]:
@@ -60,6 +78,53 @@ def _build_goal_from_body(body: dict) -> ExecTask.Goal:
     g.constraints.avoid_tags = constraints.get("avoid_tags", [])
     g.deadline_ms = goal.get("deadline_ms", 0)
     return g
+
+
+def _check_conflicts(old: dict, new: dict) -> Optional[dict]:
+    old_tag_ids = set(old.get("tags", {}).keys())
+    new_tag_ids = set(new.get("tags", {}).keys())
+    deleted_tags = old_tag_ids - new_tag_ids
+
+    old_edge_keys = {(e["from"], e["to"]) for e in old.get("edges", [])}
+    new_edge_keys = {(e["from"], e["to"]) for e in new.get("edges", [])}
+    deleted_edges = old_edge_keys - new_edge_keys
+
+    old_route_keys = set(old.get("routes", {}).keys())
+    new_route_keys = set(new.get("routes", {}).keys())
+    deleted_routes = old_route_keys - new_route_keys
+
+    if not deleted_tags and not deleted_edges and not deleted_routes:
+        return None
+
+    active_tasks = task_store.list_active()
+    blocking = []
+    for t in active_tasks:
+        reasons = []
+        for tag_id in t.goal.target_tags:
+            if str(tag_id) in deleted_tags:
+                reasons.append(f"target_tag {tag_id}")
+        if t.goal.route_id in deleted_routes:
+            reasons.append(f"route_id {t.goal.route_id}")
+        if reasons:
+            blocking.append({
+                "goal_id": t.goal_id,
+                "type": t.goal.type,
+                "target_tags": list(t.goal.target_tags),
+                "route_id": t.goal.route_id,
+                "state": t.state,
+                "reasons": reasons,
+            })
+
+    if not blocking:
+        return None
+
+    return {
+        "error": "cannot delete items used by active task(s)",
+        "deleted_tags": sorted(deleted_tags),
+        "deleted_edges": [{"from": e[0], "to": e[1]} for e in deleted_edges],
+        "deleted_routes": sorted(deleted_routes),
+        "blocking_tasks": blocking,
+    }
 
 
 def broadcast(goal_id: str, event_type: str, data: dict) -> None:
@@ -139,6 +204,34 @@ def cancel_task(goal_id: str):
         return _json_resp({"error": f"task already in final state: {rec.state}"}, 400)
     goal_queue.put({"goal_id": goal_id, "cancel": True})
     return _json_resp({"task_id": goal_id, "status": "cancel_accepted"})
+
+
+# --- Map Routes ---
+
+
+@app.route("/api/v1/map", methods=["GET"])
+def get_map():
+    scene = request.args.get("scene", "default")
+    data = _load_map(scene)
+    if data is None:
+        return _json_resp({"error": f"map '{scene}' not found"}, 404)
+    return _json_resp(data)
+
+
+@app.route("/api/v1/map", methods=["PUT"])
+def put_map():
+    scene = request.args.get("scene", "default")
+    body = request.get_json(force=True, silent=True)
+    if not body:
+        return _json_resp({"error": "invalid JSON body"}, 400)
+
+    old = _load_map(scene)
+    conflict = _check_conflicts(old, body) if old else None
+    if conflict:
+        return _json_resp(conflict, 409)
+
+    _save_map(body, scene)
+    return _json_resp({"status": "saved", "scene": scene})
 
 
 # --- WebSocket Route ---

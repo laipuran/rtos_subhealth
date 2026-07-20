@@ -38,7 +38,16 @@ class DescLayerNode(Node):
     def _start_http_server(self) -> None:
         from .http_server import app as flask_app
 
-        init_app(self._task_store, self._goal_queue)
+        maps_dir = self.declare_parameter("maps_dir", "").value
+        if not maps_dir:
+            import os
+            maps_dir = os.path.join(os.getcwd(), "config", "maps")
+            if not os.path.isdir(maps_dir):
+                self.get_logger().warn(f"maps_dir not found at {maps_dir}, trying fallback")
+                maps_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "config", "maps")
+                maps_dir = os.path.normpath(maps_dir)
+
+        init_app(self._task_store, self._goal_queue, maps_dir)
         port = self.declare_parameter("http_port", 5000).value
         t = threading.Thread(
             target=flask_app.run,
@@ -46,7 +55,7 @@ class DescLayerNode(Node):
             daemon=True,
         )
         t.start()
-        self.get_logger().info(f"HTTP server started on 0.0.0.0:{port}")
+        self.get_logger().info(f"HTTP server started on 0.0.0.0:{port}, maps_dir={maps_dir}")
 
     def _process_queue(self) -> None:
         try:

@@ -4,11 +4,13 @@ import { useTaskWS } from "./hooks/useTaskWS"
 import TaskNew from "./pages/TaskNew"
 import TaskList from "./pages/TaskList"
 import TaskDetail from "./pages/TaskDetail"
+import MapEditor from "./pages/MapEditor"
 
 export default function App() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [wsUpdates, setWsUpdates] = useState<Record<string, Partial<TaskRecord>>>({})
+  const [showEditor, setShowEditor] = useState(false)
 
   const handleWsMsg = useCallback((msg: any) => {
     setWsUpdates((prev) => {
@@ -16,13 +18,27 @@ export default function App() {
       if (msg.event === "feedback") {
         return {
           ...prev,
-          [msg.goal_id]: { ...cur, state: msg.state, progress: msg.progress, current_tag: msg.current_tag, next_tag: msg.next_tag, error_code: msg.error_code, message: msg.message },
+          [msg.goal_id]: {
+            ...cur,
+            state: msg.state,
+            progress: msg.progress,
+            current_tag: msg.current_tag,
+            next_tag: msg.next_tag,
+            error_code: msg.error_code,
+            message: msg.message,
+          },
         }
       }
       if (msg.event === "result") {
         return {
           ...prev,
-          [msg.goal_id]: { ...cur, state: msg.final_state, final_state: msg.final_state, error_code: msg.error_code, message: msg.message },
+          [msg.goal_id]: {
+            ...cur,
+            state: msg.final_state,
+            final_state: msg.final_state,
+            error_code: msg.error_code,
+            message: msg.message,
+          },
         }
       }
       return prev
@@ -31,10 +47,24 @@ export default function App() {
 
   useTaskWS(handleWsMsg)
 
+  if (showEditor) {
+    return (
+      <div className="h-screen flex flex-col">
+        <MapEditor onClose={() => setShowEditor(false)} />
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b px-6 py-3">
+      <header className="bg-white border-b px-6 py-3 flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-800">Robot Task Console</h1>
+        <button
+          onClick={() => setShowEditor(true)}
+          className="text-sm text-blue-600 hover:underline"
+        >
+          Edit Map
+        </button>
       </header>
 
       <main className="max-w-4xl mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-6">

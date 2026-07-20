@@ -89,6 +89,10 @@ class TaskStore:
         with self._lock:
             return list(self._tasks.values())
 
+    def list_active(self) -> list[TaskRecord]:
+        with self._lock:
+            return [t for t in self._tasks.values() if t.state in ("accepted", "running")]
+
     def exists(self, goal_id: str) -> bool:
         with self._lock:
             return goal_id in self._tasks
