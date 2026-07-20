@@ -4,27 +4,35 @@
 
 **修订日期：** 2026-07-21
 
+**修订历史：**
+| 日期 | 变更 |
+|---|---|
+| 2026-07-21 | 初版 |
+| 2026-07-21 | 补充 RobotInterface 抽象层、几何 AprilTag 仿真、DDS 对齐方案 |
+
 ---
 
 ## 1. 摘要
 
-当前 exec_layer 的 `_drive_segment()` 是空桩，无法驱动机器人运动；无模拟环境，全链路验证依赖真实机器人。本 RFC 定义 exec_layer 通过 unitree SportClient 下发速度指令驱动机器人、配合 AprilTag 检测完成 segment 到达闭环的方案，以及 MuJoCo 仿真与真机 GO2 共用同一套调用接口的切换方式。
+当前 exec_layer 的 `_drive_segment()` 是空桩，无法驱动机器人运动；无模拟环境，全链路验证依赖真实机器人。本 RFC 定义 exec_layer 通过 RobotInterface 抽象层控制机器人，仿真环境下使用 LowCmdRobot 驱动 MuJoCo，真机环境下使用 SportClientRobot 调用 GO2。同时定义仿真内几何 AprilTag 检测方案，无需渲染即可完成 segment 到达闭环。
 
 ---
 
 ## 2. 目标与非目标
 
 **目标：**
-1. 实现 `_drive_segment(from_tag, to_tag)` 的真实运动逻辑：SportClient.Move + AprilTag 反馈闭环。
-2. 一套 exec_layer 代码同时支持 MuJoCo 仿真与真机 GO2，通过参数/环境切换。
-3. 明确 MuJoCo 仿真启动后的 DDS 桥接机制，使 SportClient 调用无感转发到仿真。
-4. SportClient 调用失败时 exec_layer 上报对应 error_code 并终止任务。
+1. 实现 `_drive_segment(from_tag, to_tag)` 的真实运动逻辑：RobotInterface.Move + AprilTag 反馈闭环。
+2. 定义 RobotInterface 抽象层，分 LowCmdRobot（MuJoCo 仿真）与 SportClientRobot（真机 GO2）两种实现。
+3. 仿真环境下实现几何 AprilTag 检测（方案 A），无需渲染画面即可发布 `/perception/apriltag_detections`。
+4. 统一 DDS domain/interface 配置，使 ROS2 节点与 MuJoCo bridge 互通。
+5. 真机模式下 SportClient 调用失败时 exec_layer 上报对应 error_code 并终止任务。
 
 **非目标：**
 1. 不定义 Tag Graph 的数据格式与编辑方式（见 RFC 007）。
 2. 不定义 AprilTag 感知发布协议（见 RFC 001）。
-3. 不实现底层电机控制与姿态调整动作组（见 RFC 002）。
-4. 不替换 mock_exec_layer（两者共存，mock 用于纯 WebUI 验证）。
+3. 不实现真实 AprilTag 图像渲染与检测（方案 B 为后续迭代，见 §10）。
+4. 不替换 mock_exec_layer（三者共存，mock 用于纯 WebUI 验证）。
+5. 不实现底层电机直接控制与姿态调整动作组（见 RFC 002）。
 
 ---
 
@@ -39,52 +47,104 @@
 
 ## 4. 方案概览
 
-exec_layer 引入 unitree `SportClient` 作为机器人控制接口，`_drive_segment()` 内循环执行：调用 `Move()` 发速度指令 → 订阅 `/apriltag_detections` 检查目标 tag 是否到达 → 到达后 `Damp()` 停止 → 更新 feedback。MuJoCo 仿真通过 `unitree_sdk2py_bridge` 自动创建 DDS 通道，接收 SportClient 的 `rt/lowcmd`/`rt/sportmodestate` 请求并映射到 MuJoCo 物理仿真。exec_layer 不区分下层是模拟还是真机，调用同一套 API。
+exec_layer 通过 `RobotInterface` 抽象层控制机器人，不直接调 SportClient。`_drive_segment()` 内循环执行：调用 `Move()` 发速度指令 → 订阅 `/apriltag_detections` 检查目标 tag 是否到达 → 到达后 `Damp()` 停止 → 更新 feedback。
 
-```
-                        Exec Layer
-                   ┌──────────────────┐
-                   │ _drive_segment() │
-                   │  for s in segs:  │
-                   │    Move(vx,vy)   │
-                   │    wait tag_det  │
-                   │    Damp()        │
-                   │    pub feedback  │
-                   └───────┬──────────┘
-                           │ SportClient API
-                           │ (DDS rt/lowcmd / rt/sportmodestate)
-                           ▼
-              ┌─────────────────────────┐
-              │     DDS 层 (Domain 1)    │
-              └────────┬────────┬────────┘
-                       │        │
-              ┌────────▼─┐  ┌──▼─────────┐
-              │ unitree   │  │  GO2 实机  │
-              │ MuJoCo    │  │  自带 DDS  │
-              │ bridge    │  │  通信      │
-              └───────────┘  └────────────┘
-                       │
-              ┌────────▼────────┐
-              │  MuJoCo 仿真     │
-              │  mj_step()      │
-              └─────────────────┘
+两种实现注入：
+
+- **Simulation 模式** → `LowCmdRobot(self)`：自行计算步行 gait 参数，发布 `rt/lowcmd` 到 DDS。MuJoCo 的 `UnitreeSdk2Bridge` 消费后驱动仿真。同时 `SimulatedAprilTagDetector` 读取地图 JSON + 机器人位姿，几何投影计算 tag 检测结果并发布到 `/perception/apriltag_detections`。
+- **Real Robot 模式** → `SportClientRobot(self)`：调 GO2 的 SportClient RPC。AprilTag 来自实机相机 + `apriltag_perception` 节点。
+
+```mermaid
+graph TB
+    subgraph EL["Exec Layer"]
+        DRIVE["_drive_segment()<br/>for s in segs:<br/>  robot.Move()<br/>  wait tag_det<br/>  robot.Damp()<br/>  pub feedback"]
+    end
+
+    subgraph RI["RobotInterface"]
+        LCR["LowCmdRobot<br/>MuJoCo 仿真"]
+        SCR["SportClientRobot<br/>真机 GO2"]
+    end
+
+    subgraph MUJOCO["MuJoCo 仿真环境"]
+        BRIDGE["UnitreeSdk2Bridge<br/>mj_step() @200Hz<br/>+ SimulatedAprilTag"]
+        SIM["MuJoCo 仿真<br/>mj_step() 物理引擎"]
+    end
+
+    subgraph DETECTOR["SimulatedAprilTagDetector"]
+        D1["读取 robot 位姿"]
+        D2["读取 maps/default.json"]
+        D3["几何投影 + 视锥 + mj_ray"]
+        D4["发布 /perception/apriltag_detections"]
+        D1 --> D2 --> D3 --> D4
+    end
+
+    DRIVE -->|RobotInterface| RI
+    LCR -->|DDS domain_id=1, lo| BRIDGE
+    SCR -->|DDS domain_id=1, eth0| BRIDGE
+    BRIDGE --> SIM
+    DETECTOR -.->|感知 topic| EL
 ```
 
 ---
 
 ## 5. 关键接口
 
-### 5.1 机器人控制接口（unitree SportClient）
+### 5.1 RobotInterface 抽象层
 
-| 调用 | 参数 | 返回 | 说明 |
-|---|---|---|---|
-| `SportClient.Move(vx, vy, vyaw)` | float32 ×3 | — | 速度控制 (m/s, m/s, rad/s) |
-| `SportClient.StandUp()` | — | — | 从躺卧到站立 |
-| `SportClient.Damp()` | — | — | 停止运动并进入阻尼模式 |
-| `SportClient.RecoveryStand()` | — | — | 跌倒后恢复站立 |
-| `SportClient.BalanceStand()` | — | — | 平衡站立（保持位置） |
+exec_layer 不直接调用 SportClient，通过抽象接口 `RobotInterface` 控制机器人：
 
-`SportClient` 初始化需 `ChannelFactoryInitialize(domain_id, interface)`，参数通过 ROS2 参数传入 exec_layer。
+```python
+class RobotInterface(ABC):
+    @abstractmethod
+    def move(self, vx: float, vy: float, vyaw: float) -> None: ...
+    @abstractmethod
+    def stand_up(self) -> None: ...
+    @abstractmethod
+    def damp(self) -> None: ...
+    @abstractmethod
+    def recovery_stand(self) -> None: ...
+```
+
+| 调用 | 参数 | 说明 |
+|---|---|---|
+| `move(vx, vy, vyaw)` | float32 ×3 | 速度控制 (m/s, m/s, rad/s) |
+| `stand_up()` | — | 从躺卧到站立 |
+| `damp()` | — | 停止运动并进入阻尼模式 |
+| `recovery_stand()` | — | 跌倒后恢复站立 |
+
+exec_layer 通过 ROS2 参数 `robot_backend` 选择实现：
+
+| `robot_backend` 值 | 实现类 | 目标 |
+|---|---|---|
+| `"mock"` | 无（退化为 stub） | 当前 mock_exec_layer |
+| `"sim"` | `LowCmdRobot` | MuJoCo 仿真 |
+| `"real"` | `SportClientRobot` | 真机 GO2 |
+
+### 5.1a LowCmdRobot（仿真实现）
+
+通过低阶 DDS 控制 MuJoCo 仿真机器人。初始化时建立 `ChannelPublisher("rt/lowcmd", LowCmd_)`。`move()` 内计算步行 gait 参数后发布到 `rt/lowcmd`。
+
+| 方法 | 行为 |
+|---|---|
+| `init()` | `ChannelFactoryInitialize(domain_id, interface)`, 创建 `ChannelPublisher("rt/lowcmd", LowCmd_)` |
+| `move(vx, vy, vyaw)` | 根据速度计算 trot gait 相位，以 ~200Hz 发布 LowCmd（参照 `walk_go2.py` 的 gait controller） |
+| `stand_up()` | 发布过渡到站立姿态的 LowCmd 序列 |
+| `damp()` | 将 kd 设为最大值，qd 设为 0，迅速停止；或直接退出 gait loop |
+| `recovery_stand()` | 暂不实现，返回 NotImplementedError |
+
+### 5.1b SportClientRobot（真机实现）
+
+通过 unitree SportClient RPC 控制 GO2 实机。
+
+| 方法 | 实际调用 |
+|---|---|
+| `init()` | `ChannelFactoryInitialize(domain_id, "eth0")`, `SportClient(SPORT_SERVICE_NAME).SetTimeout(3.0).Init()` |
+| `move(vx, vy, vyaw)` | `SportClient.Move(vx, vy, vyaw)` |
+| `stand_up()` | `SportClient.StandUp()` |
+| `damp()` | `SportClient.Damp()` |
+| `recovery_stand()` | `SportClient.RecoveryStand()` |
+
+`ChannelFactoryInitialize` 的参数（domain_id, interface）通过 ROS2 参数传入 exec_layer。
 
 ### 5.2 ROS2 接口
 
@@ -96,13 +156,13 @@ exec_layer 引入 unitree `SportClient` 作为机器人控制接口，`_drive_se
 
 ### 5.3 模拟 / 真机切换
 
-| 模式 | 启动方式 | SportClient 目标 | AprilTag 来源 |
-|---|---|---|---|
-| Mock | `ros2 run mock_exec_layer` | 不使用 | 无（内置定时器模拟） |
-| Simulation | 先启动 `unitree_mujoco.py`，再启动 exec_layer | MuJoCo bridge 消费 DDS | 仿真相机 + apriltag 节点 |
-| Real Robot | `ros2 run exec_layer` | GO2 实机 DDS | 实机相机 + apriltag 节点 |
+| 模式 | `robot_backend` | 机器人控制 | AprilTag 来源 | 启动方式 |
+|---|---|---|---|---|
+| Mock | `"mock"` | 无（空桩） | 内置定时器 | `ros2 run mock_exec_layer` |
+| Simulation | `"sim"` | `LowCmdRobot` → MuJoCo DDS | `SimulatedAprilTagDetector` 几何投影 | 先 `unitree_mujoco.py`，再 exec_layer |
+| Real Robot | `"real"` | `SportClientRobot` → GO2 RPC | 实机相机 + `apriltag_perception` | `ros2 run exec_layer` |
 
-exec_layer 通过参数 `use_sport_client`（默认 false）控制是否启用 SportClient。为 false 时退化为当前 stub 行为（兼容 mock）。
+exec_layer 通过 ROS2 参数 `robot_backend`（默认 `"mock"`）选择模式，通过 `dds_domain_id`（默认 `1`）和 `dds_interface`（默认 `"lo"`）配置 DDS。
 
 ---
 
@@ -110,26 +170,29 @@ exec_layer 通过参数 `use_sport_client`（默认 false）控制是否启用 S
 
 ### 6.1 Segment 执行闭环
 
-```
-_drive_segment(from_tag, to_tag):
-  → 从 tag_graph.json 查 from→to 位移向量 (dx, dy)
-  → SportClient.StandUp()   // 确保站立
-  → 计算速度: vx = dx / estimate_t, vy = dy / estimate_t
-  → SportClient.Move(vx, vy, 0)
-  → 进入到达判定循环（每 100ms 检查一次）:
-      → 从 /apriltag_detections 获取最新检测
-      → 在 detections[] 中查找 id == to_tag 的条目
-      → 若找到:
-          → center_offset_x 绝对值 < 5%
-          → center_offset_y 绝对值 < 5%
-          → distance < 500mm
-          → 满足以上全部 → 判定到达
-          → 循环结束
-      → 若超时（deadline_ms 耗尽）:
-          → 上报 error_code = TIMEOUT
-          → 循环结束
-  → SportClient.Damp()
-  → 更新 feedback(current_tag=to_tag, progress+=1/N)
+```mermaid
+flowchart TD
+    START["_drive_segment(from, to)"] --> LOOKUP["查 tag_graph.json<br/>得 (dx, dy)"]
+    LOOKUP --> STAND["StandUp()"]
+    STAND --> CALC["vx = dx / t, vy = dy / t"]
+    CALC --> MOVE["Move(vx, vy, 0)"]
+    MOVE --> LOOP{"到达判定循环<br/>每 100ms"}
+
+    LOOP --> CHECK["从 /apriltag_detections<br/>查找 id == to_tag"]
+    CHECK --> FOUND{"找到?"}
+    FOUND -->|否| TIMEOUT_CHECK{"deadline 耗尽?"}
+    TIMEOUT_CHECK -->|否| LOOP
+    TIMEOUT_CHECK -->|是| ERR_TIMEOUT["error_code = TIMEOUT"]
+
+    FOUND -->|是| OFFSET{"center_offset<br/>< 5%?"}
+    OFFSET -->|否| LOOP
+    OFFSET -->|是| DIST{"distance<br/>< 500mm?"}
+    DIST -->|否| LOOP
+    DIST -->|是| ARRIVED["判定到达"]
+
+    ARRIVED --> DAMP["Damp()"]
+    ERR_TIMEOUT --> DAMP
+    DAMP --> FEEDBACK["更新 feedback<br/>current_tag = to_tag<br/>progress += 1/N"]
 ```
 
 ### 6.2 速度计算
@@ -160,7 +223,47 @@ UnitreeSdk2Bridge(model, data)
 
 SportClient 的 `Move()` 内部向 `rt/sportmodestate` 等 topic 发布指令，向 `unitree_api` service 发送请求。MuJoCo bridge 消费这些指令后驱动仿真。
 
-### 6.4 错误码与异常处理
+### 6.4 几何 AprilTag 仿真（SimulatedAprilTagDetector）
+
+仿真环境下，`SimulatedAprilTagDetector` 节点不渲染画面，通过几何投影计算 tag 检测结果。
+
+```mermaid
+flowchart TD
+    POSE["读取机器人位姿<br/>位置 x,y,z + 四元数"] --> CAM["计算相机外参<br/>base_link → 相机坐标系"]
+    CAM --> LOOP_TAGS{"遍历 maps 中<br/>所有 tags"}
+
+    LOOP_TAGS --> PROJECT["将 tag 世界坐标<br/>投影到相机坐标系"]
+    PROJECT --> FRUSTUM{"视锥剔除<br/>H-FOV ±45°<br/>V-FOV ±35°<br/>距离 0.3~5.0m"}
+
+    FRUSTUM -->|通过| RAY["射线遮挡检测<br/>mj_ray()"]
+    RAY -->|击中 tag| CALC_FIELDS["计算检测字段<br/>center_offset_x/y<br/>distance<br/>yaw/pitch/roll<br/>hamming=0"]
+    CALC_FIELDS --> NOISE["添加高斯噪声<br/>offset ±0.02<br/>distance ±0.01m<br/>yaw ±0.5°"]
+    NOISE --> NEXT_TAG{"还有 tag?"}
+    RAY -->|遮挡| NEXT_TAG
+    FRUSTUM -->|剔除| NEXT_TAG
+    NEXT_TAG -->|是| LOOP_TAGS
+    NEXT_TAG -->|否| PUB["发布 AprilTagDetections<br/>无检测则发空数组<br/>频率 ≥ 10Hz"]
+```
+
+**输出格式**与 RFC 001 完全对齐，exec_layer 无需区分检测来自仿真还是真机。
+
+### 6.5 DDS 域与接口对齐
+
+| 组件 | DDS 实现 | Domain ID | Interface | ROS_LOCALHOST_ONLY |
+|---|---|---|---|---|
+| MuJoCo bridge | CycloneDDS | 1 | lo | N/A |
+| exec_layer (sim 模式) | CycloneDDS | 1 | lo | N/A |
+| exec_layer (real 模式) | CycloneDDS | 1 | eth0 或自动 | N/A |
+| ROS2 其他节点 | rmw_cyclonedds_cpp | 1 | lo | 设 1 或无关 |
+
+配置项：
+- ROS2 端：`export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` + `export ROS_DOMAIN_ID=1`
+- MuJoCo 端：`config.py` 中 `DOMAIN_ID=1, INTERFACE="lo"`
+- exec_layer 端：通过 ROS2 参数 `dds_domain_id=1, dds_interface="lo"` 传给内部 DDS 初始化
+
+**前提条件：** 编译 CycloneDDS RMW 插件（`~/unitree_ros2/cyclonedds_ws` 已有编译产物）。
+
+### 6.6 错误码与异常处理
 
 | 场景 | error_code | 行为 |
 |---|---|---|
@@ -178,8 +281,11 @@ SportClient 的 `Move()` 内部向 `rt/sportmodestate` 等 topic 发布指令，
    - **权衡：** 控制粒度更细可做平滑插值，但需要逆运动学与状态机，实现复杂度大幅增加。
 2. **替代方案：** MuJoCo 仿真打包为 ROS2 `ament_python` 节点而非独立脚本。
    - **权衡：** 纳入 colcon 管理便于 launch 集成，但 MuJoCo 的 viewer 在主线程阻塞，与 rclpy spin 冲突。
-3. **风险：** MuJoCo 仿真与真机的运动动力学存在差异，`Move()` 速度参数调优不能直接复用。
-4. **风险：** AprilTag 发布频率低于 10Hz 时，segment 到达判定可能延迟，需加降级逻辑。
+3. **替代方案：** 仿真中渲染画面做真实 AprilTag 检测（方案 B）。
+   - **权衡：** 端到端验证感知算法更彻底，但帧率降至 20-30fps，部署复杂。目前几何投影方案（方案 A）已满足到达判定需求。
+4. **风险：** MuJoCo 仿真与真机的运动动力学存在差异，`Move()` 速度参数调优不能直接复用。
+5. **风险：** AprilTag 发布频率低于 10Hz 时，segment 到达判定可能延迟，需加降级逻辑。
+6. **风险：** LowCmdRobot 的 gait 控制器可能与真机行为不一致，导致仿真通过的参数在真机上不可用。两种模式的 RobotInterface 实现需要各自调优。
 
 ---
 
@@ -198,7 +304,39 @@ SportClient 的 `Move()` 内部向 `rt/sportmodestate` 等 topic 发布指令，
 
 ## 9. 未决问题
 
-1. MuJoCo 仿真启动是否打包为 ROS2 `ament_python` 包，还是保持独立 Python 脚本 + 子进程启动。
+1. 仿真启动是否打包为 ROS2 `ament_python` 包，还是保持独立 Python 脚本 + 子进程启动。
 2. `domain_id` 和 `interface` 参数通过 ROS2 参数还是环境变量传递给 unitree SDK。
 3. 多 tag 同时出现在视野中时，exec_layer 如何选取当前应逼近的目标（按 `next_tag` 匹配还是最近 tag）。
 4. 机器人跌倒检测通过 SportModeState 的 `error_code` 还是 IMU 数据判断。
+5. LowCmdRobot 的 gait 控制器参数（步频、摆幅、kp/kd）默认值如何确定，是否需从 `walk_go2.py` 提取为配置文件。
+6. SimulatedAprilTagDetector 的相机内参（FOV、分辨率）与真机 GO2 的相机参数是否对齐，否则仿真检测与真机检测的 `center_offset` / `distance` 存在系统偏差。
+
+---
+
+## 10. 后续操作
+
+### 第一阶段：基础建设
+
+| # | 任务 | 产出 | 参考 |
+|---|---|---|---|
+| P1 | 实现 `RobotInterface` 抽象基类 | `ros2_ws/src/orchestration/exec_layer/exec_layer/robot_interface.py` | §5.1 |
+| P1 | 实现 `LowCmdRobot`（基础 gait） | `exec_layer/robot/low_cmd_robot.py` | `walk_go2.py` gait 参数 |
+| P1 | exec_layer 按 `robot_backend` 参数注入对应实现 | `exec_layer_node.py` | §5.1 |
+| P1 | 实现 `SimulatedAprilTagDetector` | 新包或集成在 `unitree_mujoco/bridge` 中 | §6.4 |
+| P2 | 验证仿真全链路：MuJoCo + LowCmdRobot + SimulatedAprilTag | 机器人朝目标移动并停在 tag 前 | US-10 |
+
+### 第二阶段：真机接入
+
+| # | 任务 | 产出 | 参考 |
+|---|---|---|---|
+| P2 | 统一 DDS 为 CycloneDDS + domain_id=1 | 操作手册更新 + `setup_local.sh` | §6.5 |
+| P2 | 实现 `SportClientRobot` | `exec_layer/robot/sport_client_robot.py` | §5.1b |
+| P3 | GO2 实机验证 `go_to_tag` | 真机移动到目标点 | — |
+
+### 第三阶段：增强
+
+| # | 任务 | 周期 | 优先级 |
+|---|---|---|---|
+| P3 | 几何 AprilTag → 完整渲染检测（方案 B） | 后续迭代 | 低 |
+| P3 | Map JSON → MuJoCo 场景 XML 转换 | 后续迭代 | 低 |
+| P3 | `ros2 launch` 一键启动仿真全链路 | 后续迭代 | 低 |

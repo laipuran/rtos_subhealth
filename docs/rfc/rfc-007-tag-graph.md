@@ -48,17 +48,17 @@
 
 定义一份 **`maps/default.json`** 文件作为当前场景的图数据，同时被 Planner 和 WebUI 消费。Planner 启动时加载该文件建邻接表，收到 `PlanPath.srv` 请求后运行 Dijkstra 返回最短路径 segments。WebUI 通过 `GET /api/v1/map` 获取该图，使用 React Flow 渲染为可拖拽编辑的节点图，编辑后通过 `PUT /api/v1/map` 持久化。任务执行过程中，WebSocket 推送的 `current_tag` / `next_tag` 叠加在图上实时高亮。
 
-```
-     ros2_ws/config/maps/
-     └── default.json   ← 当前场景图（未来可加 room_b.json 等）
-            ↙           ↘
-     Planner           Desc Layer
- (Dijkstra, segs)    GET/PUT /map
-                           │
-                           ▼
-                      WebUI Editor
-                 (@xyflow/react 渲染)
-                 + 实时高亮 current_tag
+```mermaid
+graph TD
+    subgraph maps_dir["ros2_ws/config/maps/"]
+        DEFAULT["default.json<br/>当前场景图"]
+        FUTURE["room_b.json ...<br/>未来扩展"]
+    end
+
+    DEFAULT -->|读取| PLANNER["Planner<br/>Dijkstra, segments"]
+    DEFAULT -->|GET/PUT /api/v1/map| DESC["Desc Layer<br/>HTTP/WS Gateway"]
+    DESC <-->|编辑保存| WEBUI["WebUI Editor<br/>@xyflow/react 渲染<br/>+ 实时高亮 current_tag"]
+    PLANNER --- WEBUI
 ```
 
 ---
@@ -140,28 +140,41 @@
 
 ### 6.1 路径规划
 
-```
-WebUI 或决策层下发 go_to_tag(42)
-  → Desc Layer -> /exec_task action
-    → Exec Layer -> /plan_path service
-      → Planner 加载 tag_graph.json
-      → 建邻接表，Dijkstra 算 [start_tag → ... → 42]
-      → 返回 segments[]
-    → Exec Layer 消费 segments 并执行
+```mermaid
+sequenceDiagram
+    actor WebUI
+    participant DL as Desc Layer
+    participant EL as Exec Layer
+    participant PL as Planner
+
+    WebUI->>DL: POST /api/v1/tasks<br/>go_to_tag(42)
+    DL->>+EL: action goal /exec_task
+    EL->>+PL: service /plan_path
+    PL->>PL: load map<br/>Dijkstra [start → 42]
+    PL-->>-EL: return segments[]
+    EL->>EL: execute segments
+    EL-->>-DL: feedback / result
+    DL-->>WebUI: WS push state update
 ```
 
 ### 6.2 可视化编辑
 
-```
-WebUI /editor 页面:
-  → GET /api/v1/map              → 读取 tag_graph.json
-  → GET /api/v1/tasks?filter=active → 获取 state=running|accepted 的任务
-  → 合并两份数据:
-      被活跃 task 引用的 tag → 灰色填充 + 移除删除按钮 + hover 提示 "占用中: T-001"
-      被活跃 task 引用的边   → 灰色虚线
-      未被引用               → 正常颜色 + 可选中编辑
-  → 用户编辑（增删节点/边/路线、拖拽位置、编辑属性）
-  → 点击 Save → PUT /api/v1/map → 若 409 则弹窗显示冲突详情与阻塞任务列表
+```mermaid
+flowchart LR
+    A["GET /api/v1/map"] --> B["加载 tag_graph.json"]
+    C["GET /api/v1/tasks?filter=active"] --> D["获取活跃任务列表"]
+    B --> E["合并数据"]
+    D --> E
+    E --> F{节点被引用?}
+    F -->|是| G["灰色填充 + 移除删除按钮<br/>hover: '占用中: T-001'"]
+    F -->|否| H["正常颜色 + 可选中编辑"]
+    G --> I["用户编辑<br/>增删节点/边/路线、拖拽位置"]
+    H --> I
+    I --> J{"点击 Save"}
+    J --> K["PUT /api/v1/map"]
+    K --> L{后端检测冲突}
+    L -->|无冲突 200| M["保存成功"]
+    L -->|有冲突 409| N["弹窗显示冲突详情<br/>与阻塞任务列表"]
 ```
 
 ### 6.3 图数据刷新机制
