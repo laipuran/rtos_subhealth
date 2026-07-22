@@ -107,8 +107,58 @@ ros2 run exec_layer exec_layer_node
 ### 4.2 描述层（desc_layer）
 
 ```bash
+# 不带鉴权（开发环境）
 ros2 run desc_layer desc_layer_node
+
+# 带 API Token 鉴权（生产环境）
+ros2 run desc_layer desc_layer_node --ros-args -p api_token:=my-secret-token
 ```
+
+日志预期：`[INFO] [desc_layer_node]: Desc Layer ready, connecting to action: exec_task`
+内置 Flask 服务默认监听 `0.0.0.0:5000`。
+
+**参数：**
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `http_port` | `5000` | HTTP/WS 服务端口 |
+| `exec_action_name` | `exec_task` | 连接的执行层 action server 名称 |
+| `maps_dir` | 自动检测 | 地图文件目录 |
+| `api_token` | `""` | API 鉴权 Token（空 = 不鉴权） |
+| `db_dir` | `./config` | SQLite 数据库目录 |
+
+连接 mock 执行层时：
+
+```bash
+export ROS_LOCALHOST_ONLY=1
+ros2 run desc_layer desc_layer_node --ros-args -p exec_action_name:=mock_exec_task
+```
+
+**API 响应格式：**
+
+所有响应统一格式：
+
+```json
+{
+  "task_id": "...",
+  "trace_id": "a1b2c3d4e5f6g7h8",
+  ...
+}
+```
+
+错误时：
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "task xxx not found"
+  },
+  "trace_id": "a1b2c3d4e5f6g7h8"
+}
+```
+
+需鉴权时在请求头加 `X-API-Key: my-secret-token` 或 `X-Trace-Id: custom-id` 追踪请求。
 
 日志预期：`[INFO] [desc_layer_node]: Desc Layer ready, connecting to action: exec_task`
 内置 Flask 服务默认监听 `0.0.0.0:5000`。
@@ -254,19 +304,28 @@ git commit --no-verify -m "wip: 临时提交"
 
 ### 7.1 Mock 模式（纯软件，推荐先验证 WebUI）
 
+一键启动（推荐）：
+
 ```bash
-# 每个终端先 source + 设置 DDS
 export ROS_LOCALHOST_ONLY=1
 source /opt/ros/foxy/setup.bash
 source ~/ros2_ws/install/setup.bash
+ros2 launch desc_layer mock.launch.py
+```
 
+或手动逐终端启动：
+
+```bash
 # 终端 1：启动 mock 执行层
 ros2 run mock_exec_layer mock_exec_layer_node
 
-# 终端 2：启动 desc_layer（指向 mock action）
+# 终端 2：启动 planner
+ros2 run planner planner_node
+
+# 终端 3：启动 desc_layer（指向 mock action）
 ros2 run desc_layer desc_layer_node --ros-args -p exec_action_name:=mock_exec_task
 
-# 终端 3：启动 WebUI
+# 终端 4：启动 WebUI
 cd webui && pnpm dev
 ```
 
@@ -324,6 +383,16 @@ cd webui && pnpm dev
 
 ## 8. 常见问题
 
+### Q: 启动后任务一直卡在 `accepted` 状态
+
+检查 exec_layer 或 mock_exec_layer 是否已启动。desc_layer 需要连接到对应的 action server。
+
+```bash
+ros2 action list  # 查看可用 action server
+```
+
+若 action server 不存在，desc_layer 的 `wait_for_server` 会在 5 秒后超时，任务变为 `failed`。
+
 ### Q: `colcon build` 报错找不到 package
 
 确保先 `source /opt/ros/foxy/setup.bash`，并且 `ros2_ws/src/` 下存在对应的 package.xml。
@@ -338,7 +407,35 @@ ros2 pkg list | grep <包名>
 
 ### Q: WebUI 连接不上 desc_layer
 
-确认 desc_layer 已启动（日志无报错），且 WebUI 的 `VITE_API_BASE` 指向正确的 desc_layer 地址（默认 `http://localhost:5000`）。
+确认 desc_layer 已启动（日志无报错），且 WebUI 的 Vite proxy 配置正确。默认 Vite proxy 将 `/api` 转发到 `http://localhost:5000`。
+
+### Q: desc_layer 返回 `401 UNAUTHORIZED`
+
+desc_layer 启动了 `api_token` 参数，所有请求需要在 HTTP header 中添加：
+
+```bash
+curl -H "X-API-Key: my-secret-token" http://localhost:5000/api/v1/tasks
+```
+
+WebUI 开发环境下，可在浏览器控制台设置 `localStorage.setItem("api_token", "my-secret-token")` 后刷新（需配套修改前端 `api/tasks.ts` 中的 header 注入逻辑）。
+
+### Q: API 返回 `{"error": {"code": "...", "message": "..."}}` 格式
+
+这是统一错误格式。常见的 `code`：
+- `INVALID_JSON` — 请求体不是合法 JSON
+- `INVALID_GOAL` — task goal 字段缺失或 type 非法
+- `NOT_FOUND` — 资源不存在
+- `INVALID_STATE` — 任务已在终态无法取消
+- `CONFLICT` — 编辑地图时被活跃任务引用
+- `UNAUTHORIZED` — 缺少或错误的 API Token
+
+### Q: 任务重启后还在吗？
+
+在。`desc_layer` 使用 SQLite 持久化任务记录，重启后任务历史不丢失。数据库文件默认在 `ros2_ws/config/tasks.db`。
+
+### Q: 如何追踪某个请求的全链路？
+
+每个 HTTP 响应包含 `X-Trace-Id` header 和响应体中的 `trace_id` 字段。可在请求时通过 `X-Trace-Id: my-custom-id` 指定，便于日志关联。
 
 ### Q: commitlint 报错
 

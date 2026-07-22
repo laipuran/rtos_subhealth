@@ -1,4 +1,5 @@
 from setuptools import find_packages, setup
+import os
 
 package_name = "desc_layer"
 
@@ -9,6 +10,8 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
+        (os.path.join("share", package_name, "launch"),
+         [os.path.join("launch", f) for f in os.listdir("launch") if f.endswith(".launch.py")]),
     ],
     install_requires=["setuptools"],
     zip_safe=True,

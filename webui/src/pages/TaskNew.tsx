@@ -1,11 +1,13 @@
 import { useState } from "react"
 import { createTask } from "../api/tasks"
+import { useToast } from "../components/Toast"
 
 interface Props {
   onCreated: () => void
 }
 
 export default function TaskNew({ onCreated }: Props) {
+  const { toast } = useToast()
   const [type, setType] = useState<"go_to_tag" | "patrol_route" | "hold">("go_to_tag")
   const [tags, setTags] = useState("")
   const [loading, setLoading] = useState(false)
@@ -27,9 +29,11 @@ export default function TaskNew({ onCreated }: Props) {
         target_tags: targetTags.length > 0 ? targetTags : undefined,
       })
       setTags("")
+      toast("Task created!", "success")
       onCreated()
     } catch (err: any) {
       setError(err.message || "create task failed")
+      toast(err.message || "create task failed", "error")
     } finally {
       setLoading(false)
     }

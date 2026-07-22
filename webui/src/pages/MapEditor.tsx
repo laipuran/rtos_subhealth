@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import {
   ReactFlow,
   Background,
@@ -17,6 +17,7 @@ import "@xyflow/react/dist/style.css"
 import { getMap, saveMap } from "../api/map"
 import { listTasks } from "../api/tasks"
 import type { TagGraph, TagNode as TagNodeData } from "../types/map"
+import { useToast } from "../components/Toast"
 
 const NODE_WIDTH = 80
 const NODE_HEIGHT = 40
@@ -83,6 +84,7 @@ interface Props {
 }
 
 export default function MapEditor({ onClose }: Props) {
+  const { toast } = useToast()
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [saving, setSaving] = useState(false)
@@ -171,7 +173,7 @@ export default function MapEditor({ onClose }: Props) {
     try {
       const graph = graphFromFlow(nodes, edges)
       await saveMap(graph)
-      alert("Map saved!")
+      toast("Map saved!", "success")
     } catch (err: any) {
       setError(err.message || "save failed")
     }
