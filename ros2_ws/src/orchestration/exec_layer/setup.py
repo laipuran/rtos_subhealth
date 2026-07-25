@@ -20,6 +20,7 @@ setup(
     entry_points={
         "console_scripts": [
             "exec_layer_node = exec_layer.exec_layer_node:main",
+            "planner_node = exec_layer.planner.planner_node:main",
             "simulated_tag_detector = exec_layer.robot.simulated_tag_detector:main",
         ],
     },
