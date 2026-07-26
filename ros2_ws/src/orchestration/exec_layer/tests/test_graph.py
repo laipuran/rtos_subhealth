@@ -34,7 +34,9 @@ TagGraph = _graph_mod.TagGraph
 TagInfo = _graph_mod.TagInfo
 Edge = _graph_mod.Edge
 
-MAP_PATH = "ros2_ws/config/maps/default.json"
+MAP_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "..", "..", "..", "config", "maps", "default.json"
+)
 
 
 class TestTagGraphLoading:
