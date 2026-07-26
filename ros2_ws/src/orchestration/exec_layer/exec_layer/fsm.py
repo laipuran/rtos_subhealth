@@ -53,7 +53,9 @@ class ExecFSM:
 
         # ── 段完成 / 全部完成 ─────────────────────────────────
         {"trigger": "next_segment",   "source": ["stabilizing", "moving"], "dest": "moving"},
-        {"trigger": "all_done",       "source": ["stabilizing", "moving", "planning"], "dest": "completed"},
+        {"trigger": "all_done",       "source": [
+            "stabilizing", "moving", "approaching", "aligning"],
+         "dest": "completed"},
 
         # ── hold 退出 ─────────────────────────────────────────
         {"trigger": "hold_done",      "source": "holding",       "dest": "completed"},
@@ -73,15 +75,20 @@ class ExecFSM:
         {"trigger": "stop_resolved",  "source": "stopped",       "dest": "moving"},
         {"trigger": "stop_replan",    "source": "stopped",       "dest": "replanning"},
 
-        # ── 暂停 / 恢复 ───────────────────────────────────────
+        # ── 暂停 / 恢复 / 停止 ────────────────────────────────
         {"trigger": "pause",          "source": [
             "moving", "approaching", "aligning", "stabilizing",
             "holding", "replanning", "stopped"],
          "dest": "paused"},
         {"trigger": "resume",         "source": "paused",        "dest": "moving"},
+        {"trigger": "stop",           "source": "paused",        "dest": "stopped"},
 
-        # ── 终态 (从所有非终态均可进入) ─────────────────────
-        {"trigger": "cancel",         "source": "*",             "dest": "canceled"},
+        # ── 终态 (仅从非终态进入) ───────────────────────
+        {"trigger": "cancel",         "source": [
+            "accepted", "planning", "moving", "approaching",
+            "aligning", "stabilizing", "holding", "replanning",
+            "stopped", "paused"],
+         "dest": "canceled"},
         {"trigger": "fail",           "source": [
             "accepted", "planning", "moving", "approaching",
             "aligning", "stabilizing", "holding", "replanning",
@@ -107,7 +114,7 @@ class ExecFSM:
     _EXECUTING_STATES = {
         "planning", "moving", "approaching",
         "aligning", "stabilizing", "holding",
-        "replanning", "stopped",
+        "replanning", "stopped", "paused",
     }
 
     def __init__(self):

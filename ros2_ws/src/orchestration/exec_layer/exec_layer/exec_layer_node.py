@@ -26,6 +26,7 @@ from .recovery import (
 )
 
 _ARRIVAL_OFFSET_THRESHOLD = 0.05
+_ALIGNING_OFFSET_THRESHOLD = 0.3
 _ARRIVAL_DISTANCE_THRESHOLD = 500.0
 _SEGMENT_DEADLINE_DEFAULT = 15.0
 
@@ -45,6 +46,7 @@ class ExecLayerNode(Node):
         self._blocked_tags: set[int] = set()
         self._plan_start_tag: int = -1
         self._goal_handle = None
+        self._hold_rate = self.create_rate(10)
 
         robot_backend = self.declare_parameter("robot_backend", "mock").value
         dds_domain_id = self.declare_parameter("dds_domain_id", 1).value
@@ -135,7 +137,6 @@ class ExecLayerNode(Node):
         if goal.deadline_ms > 0:
             deadline_ns = goal.deadline_ms * 1_000_000
 
-        rate = self.create_rate(10)
         while rclpy.ok():
             if self._is_canceled(goal_handle):
                 return self._make_result(goal_handle)
@@ -148,7 +149,7 @@ class ExecLayerNode(Node):
                     return self._make_result(goal_handle)
 
             self._publish_feedback(goal_handle, progress=0.0)
-            rate.sleep()
+            self._hold_rate.sleep()
 
         self._fsm.error_code = "INTERNAL"
         self._fsm.message = "node shutdown during hold"
@@ -236,16 +237,28 @@ class ExecLayerNode(Node):
         progress: float = 0.0,
         current_tag: int = -1,
         next_tag: int = -1,
+        finished_stages: int = 0,
+        route: Optional[list[int]] = None,
     ) -> None:
         feedback = ExecTask.Feedback()
         feedback.state = self._fsm.feedback_state
         feedback.progress = progress
         feedback.current_tag = current_tag
         feedback.next_tag = next_tag
+        feedback.finished_stages = finished_stages
+        feedback.route = route or []
         feedback.error_code = self._fsm.error_code
         feedback.message = self._fsm.message
         feedback.timestamp = self.get_clock().now().to_msg()
         goal_handle.publish_feedback(feedback)
+
+    def _build_route(self, segments: list[Segment]) -> list[int]:
+        route: list[int] = []
+        for s in segments:
+            if not route or route[-1] != s.from_tag:
+                route.append(s.from_tag)
+            route.append(s.to_tag)
+        return route
 
     def _execute_segments(
         self,
@@ -255,6 +268,7 @@ class ExecLayerNode(Node):
     ) -> None:
         idx = 0
         total = len(segments)
+        route_tags = self._build_route(segments)
         while idx < total:
             if self._cancel_requested or self._is_canceled(goal_handle):
                 return
@@ -265,11 +279,15 @@ class ExecLayerNode(Node):
                 progress=idx / total if total > 0 else 1.0,
                 current_tag=segment.from_tag,
                 next_tag=segment.to_tag,
+                finished_stages=idx,
+                route=route_tags,
             )
 
             success = self._drive_segment(segment, goal)
             if success:
                 idx += 1
+                if idx < total:
+                    self._fsm.next_segment()
                 continue
 
             if self._cancel_requested or self._is_canceled(goal_handle):
@@ -304,7 +322,7 @@ class ExecLayerNode(Node):
             )
 
             self._fsm.request_replan()
-            self._publish_feedback(goal_handle)
+            self._publish_feedback(goal_handle, route=route_tags)
 
             rollback = self._move_stack.get_rollback_path(self._blocked_tags)
             if rollback:
@@ -320,7 +338,7 @@ class ExecLayerNode(Node):
                     self._move_stack.pop()
 
             current_pos = self._move_stack.current_position_tag() or -1
-            self._publish_feedback(goal_handle, current_tag=current_pos)
+            self._publish_feedback(goal_handle, current_tag=current_pos, route=route_tags)
 
             new_plan = self._request_plan(
                 goal, current_pos, self._blocked_tags,
@@ -330,11 +348,14 @@ class ExecLayerNode(Node):
                     f"New reroute plan: {len(new_plan.segments)} segments"
                 )
                 segments = list(new_plan.segments)
+                route_tags = self._build_route(segments)
                 idx = 0
                 total = len(segments)
                 self._recovery_handler.reset_retries(segment)
                 self._fsm.replan_success()
-                self._publish_feedback(goal_handle, next_tag=new_plan.next_tag)
+                self._publish_feedback(
+                    goal_handle, next_tag=new_plan.next_tag, route=route_tags,
+                )
                 continue
 
             self._fsm.error_code = "UNREACHABLE"
@@ -349,6 +370,8 @@ class ExecLayerNode(Node):
             progress=1.0,
             current_tag=segments[-1].to_tag if segments else -1,
             next_tag=-1,
+            finished_stages=total,
+            route=route_tags,
         )
 
     def _drive_segment(self, segment: Segment, goal: ExecTask.Goal) -> bool:
@@ -402,6 +425,9 @@ class ExecLayerNode(Node):
             deadline = max(deadline, estimated_time * 1.5 + 5.0)
 
         start_time = time.time()
+        reach_triggered = False
+        align_triggered = False
+        stable_triggered = False
 
         while time.time() - start_time < deadline:
             if self._cancel_requested:
@@ -439,11 +465,25 @@ class ExecLayerNode(Node):
                     return False
             else:
                 self._recovery_handler.on_tag_found()
+                if not reach_triggered:
+                    self._fsm.reach_tag()
+                    reach_triggered = True
 
             best = self._detection_filter.get_best(to_tag)
             if best is not None:
-                if (abs(best.center_offset_x) < _ARRIVAL_OFFSET_THRESHOLD
-                        and abs(best.center_offset_y) < _ARRIVAL_OFFSET_THRESHOLD
+                offset_x = abs(best.center_offset_x)
+                offset_y = abs(best.center_offset_y)
+
+                if not align_triggered and offset_x < _ALIGNING_OFFSET_THRESHOLD and offset_y < _ALIGNING_OFFSET_THRESHOLD:
+                    self._fsm.rough_aligned()
+                    align_triggered = True
+
+                if not stable_triggered and offset_x < _ARRIVAL_OFFSET_THRESHOLD and offset_y < _ARRIVAL_OFFSET_THRESHOLD:
+                    self._fsm.aligned()
+                    stable_triggered = True
+
+                if (offset_x < _ARRIVAL_OFFSET_THRESHOLD
+                        and offset_y < _ARRIVAL_OFFSET_THRESHOLD
                         and best.distance < _ARRIVAL_DISTANCE_THRESHOLD):
                     self.get_logger().info(
                         f"Reached tag {to_tag}, distance={best.distance:.0f}mm"

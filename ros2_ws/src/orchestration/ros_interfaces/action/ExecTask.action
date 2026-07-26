@@ -20,6 +20,8 @@ string state
 float32 progress
 int32 current_tag
 int32 next_tag
+int32 finished_stages
+int32[] route
 string error_code
 string message
 builtin_interfaces/Time timestamp
