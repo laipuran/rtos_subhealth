@@ -10,7 +10,7 @@ setup(
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
     ],
-    install_requires=["setuptools"],
+    install_requires=["setuptools", "transitions>=0.9.0"],
     zip_safe=True,
     maintainer="orchestration",
     maintainer_email="puranlai@qq.com",
@@ -20,6 +20,7 @@ setup(
     entry_points={
         "console_scripts": [
             "exec_layer_node = exec_layer.exec_layer_node:main",
+            "planner_node = exec_layer.planner.planner_node:main",
             "simulated_tag_detector = exec_layer.robot.simulated_tag_detector:main",
         ],
     },
