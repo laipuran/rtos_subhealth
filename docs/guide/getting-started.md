@@ -11,10 +11,14 @@
 | pnpm | 9+ |
 | gcc/g++ | 9.4+（编译 ROS2 接口包需要） |
 
-### Python 依赖（desc_layer 需要）
+### Python 依赖
 
 ```bash
+# desc_layer 依赖
 pip install flask flask-sock
+
+# exec_layer 依赖（FSM 状态机）
+pip install transitions
 ```
 
 ## 2. ROS2 环境配置
@@ -23,34 +27,37 @@ pip install flask flask-sock
 
 参考 [ROS2 Foxy 官方安装指南](https://docs.ros.org/en/foxy/Installation/Ubuntu-Install-Debians.html)。
 
-### 2.2 每次打开终端都需要执行
+### 2.2 一键 source（推荐）
+
+项目提供 `setup.sh`，自动设置 ROS2 环境与 DDS：
+
+```bash
+cd ros2_ws
+source setup.sh
+```
+
+脚本内容包含：
+- `source /opt/ros/foxy/setup.bash`
+- `source install/setup.bash`（workspace 编译产物）
+- `source ~/unitree_ros2/cyclonedds_ws/install/setup.bash`（CycloneDDS RMW，可选）
+- `export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`
+- `export ROS_DOMAIN_ID=1`
+- `export CYCLONEDDS_URI=...<NetworkInterfaceAddress>lo</NetworkInterfaceAddress>...`（绑定 loopback 网卡）
+- `export RCUTILS_CONSOLE_OUTPUT_FORMAT=...`
+
+### 2.3 手动配置（不依赖 setup.sh）
 
 ```bash
 source /opt/ros/foxy/setup.bash
+source ~/unitree_ros2/cyclonedds_ws/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export ROS_DOMAIN_ID=1
+export CYCLONEDDS_URI='<CycloneDDS><Domain><General><NetworkInterfaceAddress>lo</NetworkInterfaceAddress></General></Domain></CycloneDDS>'
+unset ROS_LOCALHOST_ONLY
+source ros2_ws/install/setup.bash
 ```
 
-建议写入 `~/.bashrc`：
-
-```bash
-echo 'source /opt/ros/foxy/setup.bash' >> ~/.bashrc
-source ~/.bashrc
-```
-
-### 2.3 DDS 环境变量
-
-部分环境（如 WSL、Docker）不支持 DDS 多播发现，需启用 localhost-only 模式：
-
-```bash
-export ROS_LOCALHOST_ONLY=1
-```
-
-也建议写入 `~/.bashrc`：
-
-```bash
-echo 'export ROS_LOCALHOST_ONLY=1' >> ~/.bashrc
-```
-
-### 2.3 验证安装
+### 2.4 验证安装
 
 ```bash
 ros2 --version
@@ -69,7 +76,7 @@ source install/setup.bash
 
 `--symlink-install` 使 Python 节点可热重载，修改源码后无需重新编译。
 
-**注意：** 编译不需要 source ROS2 以外的特殊环境变量。但运行节点前务必设置 `export ROS_LOCALHOST_ONLY=1`（见 2.3 节）。
+**注意：** 编译后运行前务必 `source setup.sh`（见 2.2 节）配置 DDS 环境。
 
 ### 3.2 只编译部分包
 
@@ -96,93 +103,41 @@ source install/setup.bash
 
 ## 4. ROS2 包启动
 
-### 4.1 执行层（exec_layer）
+### 4.1 一键启动（推荐）
+
+所有后端统一通过 `run.sh` 启动：
 
 ```bash
-ros2 run exec_layer exec_layer_node
+cd ros2_ws
+
+# Mock 模式：纯软件模拟，测 WebUI 链路
+./run.sh mock
+
+# Sim 模式：MuJoCo 仿真，看 GO2 走路
+./run.sh sim
+
+# Real 模式：控制真机 GO2
+./run.sh real
 ```
 
-日志预期：`[INFO] [exec_layer_node]: Action server ready`
+内部自动执行 `source setup.sh` + `ros2 launch desc_layer run.launch.py`。
 
-### 4.2 描述层（desc_layer）
+### 4.2 逐节点启动（调试用）
 
 ```bash
-# 不带鉴权（开发环境）
+source ros2_ws/setup.sh
+
+# Planner
+ros2 run exec_layer planner_node --ros-args -p maps_dir:=config/maps
+
+# Exec Layer
+ros2 run exec_layer exec_layer_node --ros-args -p robot_backend:=mock
+
+# Desc Layer
 ros2 run desc_layer desc_layer_node
 
-# 带 API Token 鉴权（生产环境）
-ros2 run desc_layer desc_layer_node --ros-args -p api_token:=my-secret-token
-```
-
-日志预期：`[INFO] [desc_layer_node]: Desc Layer ready, connecting to action: exec_task`
-内置 Flask 服务默认监听 `0.0.0.0:5000`。
-
-**参数：**
-
-| 参数 | 默认值 | 说明 |
-| --- | --- | --- |
-| `http_port` | `5000` | HTTP/WS 服务端口 |
-| `exec_action_name` | `exec_task` | 连接的执行层 action server 名称 |
-| `maps_dir` | 自动检测 | 地图文件目录 |
-| `api_token` | `""` | API 鉴权 Token（空 = 不鉴权） |
-| `db_dir` | `./config` | SQLite 数据库目录 |
-
-连接 mock 执行层时：
-
-```bash
-export ROS_LOCALHOST_ONLY=1
-ros2 run desc_layer desc_layer_node --ros-args -p exec_action_name:=mock_exec_task
-```
-
-**API 响应格式：**
-
-所有响应统一格式：
-
-```json
-{
-  "task_id": "...",
-  "trace_id": "a1b2c3d4e5f6g7h8",
-  ...
-}
-```
-
-错误时：
-
-```json
-{
-  "error": {
-    "code": "NOT_FOUND",
-    "message": "task xxx not found"
-  },
-  "trace_id": "a1b2c3d4e5f6g7h8"
-}
-```
-
-需鉴权时在请求头加 `X-API-Key: my-secret-token` 或 `X-Trace-Id: custom-id` 追踪请求。
-
-日志预期：`[INFO] [desc_layer_node]: Desc Layer ready, connecting to action: exec_task`
-内置 Flask 服务默认监听 `0.0.0.0:5000`。
-
-**注意：** 启动前确保 `ROS_LOCALHOST_ONLY=1`（见 2.3 节），否则 DDS 多播发现可能失败。
-
-**参数：**
-
-| 参数 | 默认值 | 说明 |
-| --- | --- | --- |
-| `http_port` | `5000` | HTTP/WS 服务端口 |
-| `exec_action_name` | `exec_task` | 连接的执行层 action server 名称 |
-
-连接 mock 执行层时：
-
-```bash
-export ROS_LOCALHOST_ONLY=1
-ros2 run desc_layer desc_layer_node --ros-args -p exec_action_name:=mock_exec_task
-```
-
-### 4.3 感知层（AprilTag 检测）
-
-```bash
-ros2 launch apriltag_perception apriltag_perception.launch.py
+# Mock Exec Layer（mock 模式专用）
+ros2 run mock_exec_layer mock_exec_layer_node
 ```
 
 ### 4.4 相机测试发布器
@@ -194,11 +149,9 @@ ros2 launch camera_test_publisher camera_test_publisher.launch.py
 ### 4.5 Mock 执行层（mock_exec_layer，无硬件也能全链路测试）
 
 ```bash
-# 安装 python 依赖（desc_layer 也需要）
-pip install flask flask-sock
+source ros2_ws/setup.sh
 
 # 启动 mock 执行层（默认 action 名 mock_exec_task）
-export ROS_LOCALHOST_ONLY=1
 ros2 run mock_exec_layer mock_exec_layer_node
 ```
 
@@ -214,13 +167,25 @@ ros2 run mock_exec_layer mock_exec_layer_node
 | 失败模拟 | `constraints.max_speed_mps < 0` 时返回 failed |
 | 取消 | 收到 cancel 请求后立即返回 canceled |
 
-**参数：**
+### 4.6 Planner（路径规划）
 
-| 参数 | 默认值 | 说明 |
-| --- | --- | --- |
-| `action_name` | `mock_exec_task` | 注册的 action server 名称 |
+Planner 集成在 `exec_layer` 包内部，通过 launch 文件自动启动：
 
-### 4.6 查看所有可用节点
+```bash
+source ros2_ws/setup.sh
+ros2 launch desc_layer mock.launch.py  # 自动包含 planner
+```
+
+或单独启动：
+
+```bash
+source ros2_ws/setup.sh
+ros2 run exec_layer planner_node --ros-args -p maps_dir:=config/maps
+```
+
+日志预期：`[INFO] [planner_node]: Loaded graph: 4 tags, 4 edges, 2 routes`
+
+### 4.7 查看所有可用节点
 
 ```bash
 ros2 node list
@@ -300,85 +265,37 @@ git commit --no-verify -m "wip: 临时提交"
 
 ## 7. 全链路启动
 
-三种模式，覆盖纯软件验证 → 仿真 → 真机。
+所有模式统一入口：
 
-### 7.1 Mock 模式（纯软件，推荐先验证 WebUI）
-
-一键启动（推荐）：
+### 7.1 Mock 模式（纯软件，测 WebUI）
 
 ```bash
-export ROS_LOCALHOST_ONLY=1
-source /opt/ros/foxy/setup.bash
-source ~/ros2_ws/install/setup.bash
-ros2 launch desc_layer mock.launch.py
+cd ros2_ws
+./run.sh mock
 ```
 
-或手动逐终端启动：
+另开一个终端启动 WebUI：
 
 ```bash
-# 终端 1：启动 mock 执行层
-ros2 run mock_exec_layer mock_exec_layer_node
-
-# 终端 2：启动 planner
-ros2 run planner planner_node
-
-# 终端 3：启动 desc_layer（指向 mock action）
-ros2 run desc_layer desc_layer_node --ros-args -p exec_action_name:=mock_exec_task
-
-# 终端 4：启动 WebUI
 cd webui && pnpm dev
 ```
 
 浏览器打开 `http://localhost:5173` → 新建 go_to_tag 任务 → 实时看到 accepted → running → succeeded 状态变化。
 
-### 7.2 仿真模式（MuJoCo，验证机器人运动）
+### 7.2 Sim 模式（MuJoCo 仿真）
 
 ```bash
-# 终端 1：启动 MuJoCo 仿真（自动创建 DDS 桥接）
-export ROS_LOCALHOST_ONLY=1
-source /opt/ros/foxy/setup.bash
-source ~/ros2_ws/install/setup.bash
-python3 ~/unitree_mujoco/simulate_python/unitree_mujoco.py
-
-# 终端 2：启动 exec_layer（SportClient 调用，操作仿真机器人）
-export ROS_LOCALHOST_ONLY=1
-source /opt/ros/foxy/setup.bash
-source ~/ros2_ws/install/setup.bash
-ros2 run exec_layer exec_layer_node
-
-# 终端 3：启动 desc_layer
-export ROS_LOCALHOST_ONLY=1
-source /opt/ros/foxy/setup.bash
-source ~/ros2_ws/install/setup.bash
-ros2 run desc_layer desc_layer_node
-
-# 终端 4：启动 WebUI
-cd webui && pnpm dev
+cd ros2_ws
+./run.sh sim
 ```
 
-### 7.3 真机模式（GO2 实机）
+MuJoCo 窗口显示 GO2 在 tag 地图上行走。
+
+### 7.3 Real 模式（真机 GO2）
 
 ```bash
-# 终端 1：启动 exec_layer
-export ROS_LOCALHOST_ONLY=1
-source /opt/ros/foxy/setup.bash
-source ~/ros2_ws/install/setup.bash
-ros2 run exec_layer exec_layer_node
-
-# 终端 2：启动 desc_layer
-export ROS_LOCALHOST_ONLY=1
-source /opt/ros/foxy/setup.bash
-source ~/ros2_ws/install/setup.bash
-ros2 run desc_layer desc_layer_node
-
-# 终端 3：启动感知层
-export ROS_LOCALHOST_ONLY=1
-source /opt/ros/foxy/setup.bash
-source ~/ros2_ws/install/setup.bash
-ros2 launch apriltag_perception apriltag_perception.launch.py
-
-# 终端 4：启动 WebUI
-cd webui && pnpm dev
+cd ros2_ws
+./run.sh real
 ```
 
 ## 8. 常见问题

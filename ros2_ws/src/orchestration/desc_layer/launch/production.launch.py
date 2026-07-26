@@ -3,11 +3,14 @@
 Usage:
   source ros2_ws/setup.sh
   ros2 launch desc_layer production.launch.py
+  ros2 launch desc_layer production.launch.py robot_backend:=mock
+  ros2 launch desc_layer production.launch.py robot_backend:=sim
 """
 import os
 
 from launch import LaunchDescription
-from launch.actions import SetEnvironmentVariable, LogInfo
+from launch.actions import SetEnvironmentVariable, LogInfo, DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
@@ -18,6 +21,9 @@ def generate_launch_description():
     maps_dir = os.path.join(os.getcwd(), "config", "maps")
 
     return LaunchDescription([
+        DeclareLaunchArgument("robot_backend", default_value="mock",
+                              description="mock | sim | real"),
+
         SetEnvironmentVariable("RMW_IMPLEMENTATION", "rmw_cyclonedds_cpp"),
         SetEnvironmentVariable("ROS_DOMAIN_ID", "1"),
         SetEnvironmentVariable("CYCLONEDDS_URI", CURI),
@@ -35,7 +41,7 @@ def generate_launch_description():
             package="exec_layer",
             executable="exec_layer_node",
             name="exec_layer",
-            parameters=[{"robot_backend": "mock"}],
+            parameters=[{"robot_backend": LaunchConfiguration("robot_backend")}],
             output="screen",
         ),
         Node(
