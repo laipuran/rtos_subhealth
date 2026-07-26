@@ -37,7 +37,7 @@ class RecoveryHandler:
         self._current_level = LostTagLevel.NONE
         self._retry_count: dict[str, int] = {}
 
-    def handle_lost_tag(self, elapsed: float) -> RecoveryAction:
+    def handle_lost_tag(self) -> RecoveryAction:
         if self._lost_start_time is None:
             self._lost_start_time = time.time()
             self._current_level = LostTagLevel.LEVEL_1

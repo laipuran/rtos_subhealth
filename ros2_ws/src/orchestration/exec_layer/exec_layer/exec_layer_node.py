@@ -28,7 +28,7 @@ from .recovery import (
 _ARRIVAL_OFFSET_THRESHOLD = 0.05
 _ARRIVAL_DISTANCE_THRESHOLD = 500.0
 _SEGMENT_DEADLINE_DEFAULT = 15.0
-_RETRY_WAIT_SEC = 3.0
+
 
 
 class ExecLayerNode(Node):
@@ -282,7 +282,7 @@ class ExecLayerNode(Node):
                     f"Retrying segment {segment.edge_id} "
                     f"(attempt {self._recovery_handler._retry_count.get(segment.edge_id, 0)})"
                 )
-                time.sleep(_RETRY_WAIT_SEC)
+                time.sleep(self._recovery_handler.get_retry_wait())
                 continue
 
             # retries exhausted -> attempt reroute
@@ -314,7 +314,9 @@ class ExecLayerNode(Node):
                 for rb_seg in rollback:
                     if self._cancel_requested:
                         return
-                    self._drive_segment(rb_seg, goal)
+                    ok = self._drive_segment(rb_seg, goal)
+                    if not ok:
+                        return
                     self._move_stack.pop()
 
             current_pos = self._move_stack.current_position_tag() or -1
@@ -408,8 +410,7 @@ class ExecLayerNode(Node):
                 return False
 
             if not self._detection_filter.is_stable(to_tag, min_frames=3):
-                elapsed = time.time() - start_time
-                action = self._recovery_handler.handle_lost_tag(elapsed)
+                action = self._recovery_handler.handle_lost_tag()
                 if action == RecoveryAction.CONTINUE:
                     speed_scale = 0.5
                     self._robot.move(vx * speed_scale, vy * speed_scale, 0.0)
