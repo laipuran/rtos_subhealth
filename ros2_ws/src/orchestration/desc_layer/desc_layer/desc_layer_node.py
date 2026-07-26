@@ -12,6 +12,7 @@ from ros_interfaces.action import ExecTask
 
 from .http_server import broadcast, init_app
 from .task_store import TaskRecord, TaskStore
+from .log_util import info as log_info, error as log_error
 
 _STATUS_SUCCEEDED = 4
 _STATUS_CANCELED = 5
@@ -89,7 +90,8 @@ class DescLayerNode(Node):
 
     def _send_goal(self, record: TaskRecord) -> None:
         if not self._action_client.wait_for_server(timeout_sec=5.0):
-            self.get_logger().error(f"{self._exec_action_name} action server not available")
+            log_error("desc", "ACT", f"{self._exec_action_name} unavailable",
+                      task=record.goal_id[:8])
             self._task_store.update(
                 record.goal_id, state="failed", error_code="INTERNAL",
                 message=f"{self._exec_action_name} action server unavailable",
@@ -97,6 +99,9 @@ class DescLayerNode(Node):
             broadcast(record.goal_id, "result",
                       {"final_state": "failed", "error_code": "INTERNAL"})
             return
+
+        log_info("desc", "ACT", f"send_goal → {self._exec_action_name}",
+                 task=record.goal_id[:8], type=record.goal.type)
 
         goal = ExecTask.Goal()
         goal.type = record.goal.type
@@ -117,12 +122,14 @@ class DescLayerNode(Node):
     def _goal_response_callback(self, goal_id: str, future) -> None:
         goal_handle = future.result()
         if not goal_handle or not goal_handle.accepted:
+            log_error("desc", "ACT", f"goal rejected", task=goal_id[:8])
             self._task_store.update(goal_id, state="failed", error_code="REJECTED",
                                      message="goal rejected by exec_layer")
             broadcast(goal_id, "result",
                       {"final_state": "failed", "error_code": "REJECTED"})
             return
 
+        log_info("desc", "ACT", f"accepted → running", task=goal_id[:8])
         self._goal_handles[goal_id] = goal_handle
         self._task_store.update(goal_id, state="running")
 
@@ -170,6 +177,9 @@ class DescLayerNode(Node):
             final_state = "failed"
         else:
             final_state = "unknown"
+
+        log_info("desc", "ACT", f"result: {final_state}", task=goal_id[:8],
+                 err=result.error_code if result else "")
 
         self._task_store.update(
             goal_id,

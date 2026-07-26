@@ -1,33 +1,80 @@
 from __future__ import annotations
 
+import json
+import math
+import os
+import threading
+import time
 from typing import Optional
 
 import rclpy
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy
 
 from ros_interfaces.action import ExecTask
 from ros_interfaces.msg import Segment
 from ros_interfaces.srv import PlanPath
 
-from .fsm import ExecFSM
+from apriltag_interfaces.msg import AprilTagDetections
+
+from .robot import RobotInterface, SportClientRobot, SimRobot
+from .log_util import info as log_info, warn as log_warn, error as log_error
+
+_STATE_RUNNING = "running"
+_STATE_SUCCEEDED = "succeeded"
+_STATE_FAILED = "failed"
+_STATE_CANCELED = "canceled"
+
+_GO_TO_TAG = "go_to_tag"
+_PATROL_ROUTE = "patrol_route"
 
 
 class ExecLayerNode(Node):
-    """执行层节点 —— 集成 FSM 的 RFC003/004 骨架实现
-
-    三种任务类型的执行路径:
-      patrol/navigate:  accepted → planning → 逐段 moving→...→stabilizing → completed
-      hold:             accepted → holding → (等待取消/到期) → completed/canceled
-
-    速率控制: 10 Hz 轮询，预留感知回调驱动接口.
-    """
+    """Exec layer node implementing RFC003/004 with RobotInterface."""
 
     def __init__(self) -> None:
         super().__init__("exec_layer_node")
-        self._fsm = ExecFSM()
 
+        self._cancel_requested = False
+        self._robot: Optional[RobotInterface] = None
+        self._apriltag_sub = None
+        self._latest_detections: Optional[AprilTagDetections] = None
+        self._detection_lock = threading.Lock()
+
+        # Declare parameters
+        robot_backend = self.declare_parameter("robot_backend", "mock").value
+        dds_domain_id = self.declare_parameter("dds_domain_id", 1).value
+        dds_interface = self.declare_parameter("dds_interface", "lo").value
+        maps_dir = self.declare_parameter("maps_dir", "").value
+
+        # Initialize robot backend
+        if robot_backend == "real":
+            self._robot = SportClientRobot(domain_id=dds_domain_id, interface=dds_interface)
+            if not self._robot.connect():
+                self.get_logger().error("SportClientRobot connect failed")
+        elif robot_backend == "sim":
+            if not maps_dir:
+                maps_dir = os.path.join(os.getcwd(), "config", "maps")
+            self._robot = SimRobot(maps_path=maps_dir)
+            if not self._robot.connect():
+                self.get_logger().error("SimRobot connect failed")
+        else:
+            self._robot = None
+            self.get_logger().info(f"robot_backend={robot_backend}, using stub behavior")
+
+        # Subscribe to AprilTag detections
+        self._apriltag_sub = self.create_subscription(
+            AprilTagDetections,
+            "/perception/apriltag_detections",
+            self._apriltag_callback,
+            QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT),
+        )
+
+        # Planner client
         self._planner_client = self.create_client(PlanPath, "plan_path")
+
+        # Action server
         self._action_server = ActionServer(
             self,
             ExecTask,
@@ -37,11 +84,9 @@ class ExecLayerNode(Node):
             cancel_callback=self.handle_cancel,
         )
 
-        # 轮询定时器(可选): 用于 hold 超时 / 取消 / stopped 恢复等场景
-        self._poll_timer = None
-        self._goal_handle = None
+        self._robot_backend = robot_backend
 
-    # ── Action 生命周期回调 ───────────────────────────────────
+        self.get_logger().info(f"Exec Layer ready, backend={robot_backend}")
 
     def handle_goal(self, goal_request: ExecTask.Goal) -> GoalResponse:
         if not goal_request.type:
@@ -50,162 +95,60 @@ class ExecLayerNode(Node):
         return GoalResponse.ACCEPT
 
     def handle_cancel(self, goal_handle) -> CancelResponse:
-        self._fsm.cancel()
-        self.get_logger().info("Cancel accepted by state machine")
+        self.get_logger().info("Cancel requested")
+        self._cancel_requested = True
+        if self._robot and self._robot.is_connected():
+            self._robot.damp()
         return CancelResponse.ACCEPT
 
+    def _apriltag_callback(self, msg: AprilTagDetections) -> None:
+        with self._detection_lock:
+            self._latest_detections = msg
+
     def execute_task(self, goal_handle):
-        self._goal_handle = goal_handle
+        self._cancel_requested = False
         goal = goal_handle.request
-
-        # ── 1. 接收任务 ────────────────────────────────────────
-        self._fsm.accept_goal()
-        self._publish_feedback(goal_handle)
-
-        # ── 2. 按任务类型分流 ──────────────────────────────────
-        if goal.type == "hold":
-            return self._execute_hold(goal_handle, goal)
-
-        return self._execute_motion(goal_handle, goal)
-
-    # ── hold 任务 ────────────────────────────────────────────
-
-    def _execute_hold(self, goal_handle, goal: ExecTask.Goal):
-        """hold: 驻留等待，直到取消或 deadline 到达"""
-        self._fsm.hold_position()
-        self._publish_feedback(goal_handle)
-
-        deadline_ns: int | None = None
-        if goal.deadline_ms > 0:
-            deadline_ns = goal.deadline_ms * 1_000_000  # ms → ns
-
-        rate = self.create_rate(10)  # 10 Hz 轮询
-        while rclpy.ok():
-            if self._is_canceled(goal_handle):
-                return self._make_result(goal_handle)
-
-            # deadline 到达 → 正常结束
-            if deadline_ns is not None:
-                now_ns = self.get_clock().now().nanoseconds
-                if now_ns >= deadline_ns:
-                    self._fsm.hold_done()
-                    self._publish_feedback(goal_handle)
-                    return self._make_result(goal_handle)
-
-            self._publish_feedback(goal_handle, progress=0.0)
-            rate.sleep()
-
-        # rclpy 关闭 → failed
-        self._fsm.error_code = "INTERNAL"
-        self._fsm.message = "node shutdown during hold"
-        self._fsm.fail()
-        return self._make_result(goal_handle)
-
-    # ── patrol / navigate 任务 ──────────────────────────────
-
-    def _execute_motion(self, goal_handle, goal: ExecTask.Goal):
-        """patrol/navigate: 规划 → 逐段执行"""
-        # 2a. 请求规划
-        self._fsm.start_plan()
-        self._publish_feedback(goal_handle)
+        feedback_msg = ExecTask.Feedback()
+        feedback_msg.state = "accepted"
+        feedback_msg.progress = 0.0
+        feedback_msg.current_tag = -1
+        feedback_msg.next_tag = -1
+        goal_handle.publish_feedback(feedback_msg)
 
         plan = self._request_plan(goal)
         if plan is None:
-            if self._fsm.state != "canceled":
-                self._fsm.error_code = "INTERNAL"
-                self._fsm.message = "planner unavailable"
-                self._fsm.plan_failed()
-            return self._make_result(goal_handle)
+            if self._robot_backend == "mock":
+                log_info("exec", "TASK", "mock fallback: no planner")
+                self._execute_segments([], goal, feedback_msg, goal_handle)
+                result = ExecTask.Result()
+                result.final_state = _STATE_SUCCEEDED
+                result.error_code = ""
+                result.message = "mock: planner unavailable, simulated success"
+                result.finished_time = self.get_clock().now().to_msg()
+                goal_handle.succeed()
+                return result
+            return self._finish_with_error(goal_handle, "INTERNAL", "planner unavailable")
 
-        if plan.error_code not in ("OK", "PARTIAL"):
-            self._fsm.error_code = plan.error_code
-            self._fsm.message = plan.message or "planner returned error"
-            self._fsm.plan_failed()
-            return self._make_result(goal_handle)
+        feedback_msg.state = _STATE_RUNNING
+        feedback_msg.next_tag = plan.next_tag
+        goal_handle.publish_feedback(feedback_msg)
 
-        # 2b. 规划成功
-        self._fsm.plan_success()
-        self._publish_feedback(goal_handle, next_tag=plan.next_tag)
+        self._execute_segments(plan.segments, goal, feedback_msg, goal_handle)
 
-        segments = plan.segments
-        total = len(segments)
-
-        # 无路径段: 起点即终点，直接完成
-        if total == 0:
-            self._fsm.all_done()
-            return self._make_result(goal_handle)
-
-        # 2c. 逐段执行
-        for i, segment in enumerate(segments):
-            if self._is_canceled(goal_handle):
-                return self._make_result(goal_handle)
-
-            if i > 0:
-                self._fsm.next_segment()
-
-            self._execute_segment_phases(segment, goal_handle)
-            if self._fsm.state == "canceled":
-                return self._make_result(goal_handle)
-
-            self._publish_feedback(
-                goal_handle,
-                progress=(i + 1) / total,
-                current_tag=segment.to_tag,
-                next_tag=segments[i + 1].to_tag
-                if i + 1 < total
-                else -1,
-            )
-
-        # 2d. 全部完成
-        self._fsm.all_done()
-        return self._make_result(goal_handle)
-
-    # ── 单段执行 ──────────────────────────────────────────────
-
-    def _execute_segment_phases(
-        self, segment: Segment, goal_handle
-    ) -> None:
-        self._drive_phase("moving", segment)
-        if self._is_canceled(goal_handle):
-            return
-
-        self._fsm.reach_tag()
-        self._publish_feedback(goal_handle, current_tag=segment.to_tag)
-
-        self._drive_phase("approaching", segment)
-        if self._is_canceled(goal_handle):
-            return
-
-        self._fsm.rough_aligned()
-        self._publish_feedback(goal_handle, current_tag=segment.to_tag)
-
-        self._drive_phase("aligning", segment)
-        if self._is_canceled(goal_handle):
-            return
-
-        self._fsm.aligned()
-        self._publish_feedback(goal_handle, current_tag=segment.to_tag)
-
-        self._drive_phase("stabilizing", segment)
-
-    def _drive_phase(self, phase: str, segment: Segment) -> None:
-        """骨架: 仅打日志. 替换为真实运动控制 + 感知回调驱动.
-
-        真实实现应订阅 /perception/apriltag_detections,
-        根据 phase 判断达标条件, 条件满足后调用 FSM 触发转移.
-        """
-        self.get_logger().info(
-            f"  [{self._fsm.phase}] "
-            f"tag={segment.to_tag}  from={segment.from_tag}"
-        )
-
-    # ── 规划器 ────────────────────────────────────────────────
+        result = ExecTask.Result()
+        result.final_state = _STATE_SUCCEEDED
+        result.error_code = ""
+        result.message = ""
+        result.finished_time = self.get_clock().now().to_msg()
+        goal_handle.succeed()
+        return result
 
     def _request_plan(self, goal: ExecTask.Goal) -> Optional[PlanPath.Response]:
         if not self._planner_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().error("Planner service not available")
+            log_error("exec", "PLAN", "planner service unavailable")
             return None
 
+        log_info("exec", "PLAN", f"request: {goal.type} tags={list(goal.target_tags)}")
         request = PlanPath.Request()
         request.goal_id = ""
         request.task_type = goal.type
@@ -224,48 +167,144 @@ class ExecLayerNode(Node):
             return None
         return future.result()
 
-    # ── 反馈 / 结果 ───────────────────────────────────────────
-
-    def _publish_feedback(
+    def _execute_segments(
         self,
+        segments: list[Segment],
+        goal: ExecTask.Goal,
+        feedback: ExecTask.Feedback,
         goal_handle,
-        progress: float = 0.0,
-        current_tag: int = -1,
-        next_tag: int = -1,
     ) -> None:
-        feedback = ExecTask.Feedback()
-        feedback.state = self._fsm.feedback_state
-        feedback.progress = progress
-        feedback.current_tag = current_tag
-        feedback.next_tag = next_tag
-        feedback.error_code = self._fsm.error_code
-        feedback.message = self._fsm.message
-        feedback.timestamp = self.get_clock().now().to_msg()
+        total = len(segments)
+        if total > 0:
+            route = "→".join(str(s.from_tag) for s in segments)
+            log_info("exec", "DRIVE", f"{total} segments: {route}→{segments[-1].to_tag}")
+        for idx, segment in enumerate(segments):
+            if self._cancel_requested or goal_handle.is_cancel_requested:
+                self._finish_canceled(goal_handle)
+                return
+
+            feedback.progress = idx / total if total > 0 else 1.0
+            feedback.current_tag = segment.from_tag
+            feedback.next_tag = segment.to_tag
+            goal_handle.publish_feedback(feedback)
+
+            success = self._drive_segment(segment, goal)
+            if not success:
+                if not self._cancel_requested:
+                    self._finish_with_error(goal_handle, "UNREACHABLE",
+                                            f"failed to reach tag {segment.to_tag}")
+                return
+
+        feedback.progress = 1.0
+        feedback.current_tag = segments[-1].to_tag if segments else -1
+        feedback.next_tag = -1
         goal_handle.publish_feedback(feedback)
 
-    def _is_canceled(self, goal_handle) -> bool:
-        if goal_handle.is_cancel_requested and self._fsm.state != "canceled":
-            self._fsm.cancel()
-        return self._fsm.state == "canceled"
+    def _drive_segment(self, segment: Segment, goal: ExecTask.Goal) -> bool:
+        to_tag = segment.to_tag
+        from_tag = segment.from_tag
+        dist = 0.0
+        if self._robot and isinstance(self._robot, SimRobot):
+            # 从地图获取距离
+            maps_dir = self._maps_dir if hasattr(self, '_maps_dir') else os.path.join(os.getcwd(), "config", "maps")
+            map_path = os.path.join(maps_dir, "default.json")
+            if os.path.exists(map_path):
+                with open(map_path) as f:
+                    data = json.load(f)
+                tags = data.get("tags", {})
+                fpos = tags.get(str(from_tag), {"x": 0, "y": 0})
+                tpos = tags.get(str(to_tag), {"x": 0, "y": 0})
+                dist = math.sqrt((tpos["x"] - fpos["x"])**2 + (tpos["y"] - fpos["y"])**2)
+        log_info("exec", "DRIVE", f"segment {from_tag}→{to_tag}" +
+                 (f", dist={dist:.1f}m" if dist else ""))
 
-    def _make_result(self, goal_handle) -> ExecTask.Result:
+        if not self._robot or not self._robot.is_connected():
+            self.get_logger().info("No robot backend, simulating segment completion")
+            time.sleep(1.0)
+            return True
+
+        # 如果是 SimRobot，获取 tag 坐标并计算方向
+        if isinstance(self._robot, SimRobot):
+            self._robot.stand_up()
+            time.sleep(1.0)
+            maps_dir = self.declare_parameter("maps_dir", "").value
+            if not maps_dir:
+                maps_dir = os.path.join(os.getcwd(), "config", "maps")
+            map_path = os.path.join(maps_dir, "default.json")
+            tags = {}
+            if os.path.exists(map_path):
+                with open(map_path) as f:
+                    data = json.load(f)
+                tags = data.get("tags", {})
+
+            from_pos = tags.get(str(from_tag), {"x": 0, "y": 0})
+            to_pos = tags.get(str(to_tag), {"x": 0, "y": 0})
+            dx = to_pos["x"] - from_pos["x"]
+            dy = to_pos["y"] - from_pos["y"]
+            dist = math.sqrt(dx ** 2 + dy ** 2)
+            speed = 0.3
+            duration = max(dist / speed, 3.0)
+
+            self._robot.move_blocking(0.3, 0.0, 0.0, duration)
+            self._robot.damp()
+
+            # 检查是否到达
+            if self._robot.check_tag_arrival(to_tag):
+                log_info("exec", "DRIVE", f"→ tag {to_tag} reached")
+                return True
+            log_warn("exec", "DRIVE", f"→ tag {to_tag} NOT reached")
+            return False
+
+        # 真机模式用 AprilTag 检测
+        self._robot.stand_up()
+        time.sleep(0.5)
+        self._robot.move(0.3, 0.0, 0.0)
+
+        deadline = goal.deadline_ms / 1000.0 if goal.deadline_ms > 0 else 15.0
+        start_time = time.time()
+
+        while time.time() - start_time < deadline:
+            if self._cancel_requested:
+                self._robot.damp()
+                return False
+
+            with self._detection_lock:
+                detections = self._latest_detections
+
+            if detections is not None:
+                for det in detections.detections:
+                    if det.id == to_tag:
+                        if (abs(det.center_offset_x) < 0.05
+                                and abs(det.center_offset_y) < 0.05
+                                and det.distance < 500.0):
+                            log_info("exec", "DRIVE",
+                                     f"→ tag {to_tag} reached (dist={det.distance:.0f}mm)")
+                            self._robot.damp()
+                            return True
+            time.sleep(0.1)
+
+        log_warn("exec", "DRIVE", f"→ tag {to_tag} timeout")
+        self._robot.damp()
+        return False
+
+    def _finish_with_error(
+        self, goal_handle, code: str, message: str
+    ) -> ExecTask.Result:
         result = ExecTask.Result()
-        result.final_state = self._fsm.final_state
-        result.error_code = self._fsm.error_code
-        result.message = self._fsm.message
+        result.final_state = _STATE_FAILED
+        result.error_code = code
+        result.message = message
         result.finished_time = self.get_clock().now().to_msg()
+        goal_handle.abort()
+        return result
 
-        if result.final_state == "succeeded":
-            goal_handle.succeed()
-        elif result.final_state == "failed":
-            goal_handle.abort()
-        elif result.final_state == "canceled":
-            goal_handle.canceled()
-        else:
-            self.get_logger().warn(f"Unexpected final_state: {result.final_state}")
-            goal_handle.abort()
-
-        self._goal_handle = None
+    def _finish_canceled(self, goal_handle) -> ExecTask.Result:
+        result = ExecTask.Result()
+        result.final_state = _STATE_CANCELED
+        result.error_code = ""
+        result.message = ""
+        result.finished_time = self.get_clock().now().to_msg()
+        goal_handle.canceled()
         return result
 
 
@@ -277,6 +316,9 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        if node._robot and node._robot.is_connected():
+            node._robot.damp()
+            node._robot.disconnect()
         node.destroy_node()
         rclpy.shutdown()
 

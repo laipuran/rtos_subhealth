@@ -8,6 +8,8 @@ from rclpy.node import Node
 
 from ros_interfaces.action import ExecTask
 
+from .log_util import info as log_info, warn as log_warn
+
 
 class MockExecLayerNode(Node):
     def __init__(self) -> None:
@@ -44,6 +46,8 @@ class MockExecLayerNode(Node):
         self._cancel_requested = False
         goal = goal_handle.request
         feedback = ExecTask.Feedback()
+
+        log_info("mock", "TASK", f"{goal.type} targets={list(goal.target_tags)}")
 
         feedback.state = "running"
         feedback.progress = 0.0
@@ -115,8 +119,8 @@ class MockExecLayerNode(Node):
             feedback.next_tag = target if i < steps else -1
             feedback.error_code = ""
             feedback.message = f"approaching tag {target} (step {i}/{steps})"
-            goal_handle.publish_feedback(feedback)
-            self.get_logger().info(f"mock go_to_tag: {i}/{steps}")
+        goal_handle.publish_feedback(feedback)
+        log_info("mock", "TASK", f"step {i}/{steps}, tag={target} ({i}/{steps})")
 
         result = ExecTask.Result()
         result.final_state = "succeeded"

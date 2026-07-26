@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import threading
+import time
 import uuid
 from typing import Any, Optional
 
@@ -14,6 +16,10 @@ from flask_sock import Sock
 from ros_interfaces.action import ExecTask
 
 from .task_store import TaskRecord, TaskStore
+
+# 禁用 werkzeug 默认日志
+log = logging.getLogger("werkzeug")
+log.disabled = True
 
 app = Flask(__name__)
 sock = Sock(app)
@@ -198,6 +204,23 @@ def _attach_trace_id():
     if not tid:
         tid = uuid.uuid4().hex[:16]
     request.trace_id = tid
+
+
+@app.after_request
+def _log_request(resp: Response) -> Response:
+    """自定义请求日志，替代 werkzeug 默认输出"""
+    t = time.time() - request._req_start if hasattr(request, "_req_start") else 0
+    # method path status trace_id duration_ms
+    print(f"\033[36m[desc:HTTP]\033[0m {request.method} {request.path} "
+          f"\033[{33 if resp.status_code >= 400 else 32}m{resp.status_code}\033[0m "
+          f"(trace: {request.trace_id}, {t*1000:.0f}ms)",
+          flush=True)
+    return resp
+
+
+@app.before_request
+def _start_timer():
+    request._req_start = time.time()
 
 
 # --- HTTP Routes ---
