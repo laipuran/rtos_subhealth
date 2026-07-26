@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import time
 from typing import Optional
 
@@ -14,6 +15,7 @@ from ros_interfaces.srv import PlanPath
 
 from apriltag_interfaces.msg import AprilTagDetections
 
+from .fsm import ExecFSM
 from .robot import RobotInterface, LowCmdRobot, SportClientRobot
 from .detection_filter import DetectionFilter
 from .move_stack import MoveStack
@@ -22,15 +24,6 @@ from .recovery import (
     RecoveryHandler,
     SegmentFailureAction,
 )
-
-_STATE_RUNNING = "running"
-_STATE_SUCCEEDED = "succeeded"
-_STATE_FAILED = "failed"
-_STATE_CANCELED = "canceled"
-
-_GO_TO_TAG = "go_to_tag"
-_PATROL_ROUTE = "patrol_route"
-_HOLD = "hold"
 
 _ARRIVAL_OFFSET_THRESHOLD = 0.05
 _ARRIVAL_DISTANCE_THRESHOLD = 500.0
@@ -42,6 +35,7 @@ class ExecLayerNode(Node):
     def __init__(self) -> None:
         super().__init__("exec_layer_node")
 
+        self._fsm = ExecFSM()
         self._cancel_requested = False
         self._robot: Optional[RobotInterface] = None
         self._detection_filter = DetectionFilter(window=10)
@@ -50,6 +44,7 @@ class ExecLayerNode(Node):
         self._apriltag_sub = None
         self._blocked_tags: set[int] = set()
         self._plan_start_tag: int = -1
+        self._goal_handle = None
 
         robot_backend = self.declare_parameter("robot_backend", "mock").value
         dds_domain_id = self.declare_parameter("dds_domain_id", 1).value
@@ -107,6 +102,7 @@ class ExecLayerNode(Node):
     def handle_cancel(self, goal_handle) -> CancelResponse:
         self.get_logger().info("Cancel requested")
         self._cancel_requested = True
+        self._fsm.cancel()
         if self._robot and self._robot.is_connected():
             self._robot.damp()
         return CancelResponse.ACCEPT
@@ -120,46 +116,86 @@ class ExecLayerNode(Node):
         self._move_stack.clear()
         self._recovery_handler.clear()
         self._plan_start_tag = -1
+        self._goal_handle = goal_handle
 
         goal = goal_handle.request
-        feedback_msg = ExecTask.Feedback()
-        feedback_msg.state = "accepted"
-        feedback_msg.progress = 0.0
-        feedback_msg.current_tag = -1
-        feedback_msg.next_tag = -1
-        goal_handle.publish_feedback(feedback_msg)
+        self._fsm.accept_goal()
+        self._publish_feedback(goal_handle)
+
+        if goal.type == "hold":
+            return self._execute_hold(goal_handle, goal)
+
+        return self._execute_motion(goal_handle, goal)
+
+    def _execute_hold(self, goal_handle, goal: ExecTask.Goal) -> ExecTask.Result:
+        self._fsm.hold_position()
+        self._publish_feedback(goal_handle)
+
+        deadline_ns: int | None = None
+        if goal.deadline_ms > 0:
+            deadline_ns = goal.deadline_ms * 1_000_000
+
+        rate = self.create_rate(10)
+        while rclpy.ok():
+            if self._is_canceled(goal_handle):
+                return self._make_result(goal_handle)
+
+            if deadline_ns is not None:
+                now_ns = self.get_clock().now().nanoseconds
+                if now_ns >= deadline_ns:
+                    self._fsm.hold_done()
+                    self._publish_feedback(goal_handle)
+                    return self._make_result(goal_handle)
+
+            self._publish_feedback(goal_handle, progress=0.0)
+            rate.sleep()
+
+        self._fsm.error_code = "INTERNAL"
+        self._fsm.message = "node shutdown during hold"
+        self._fsm.fail()
+        return self._make_result(goal_handle)
+
+    def _execute_motion(self, goal_handle, goal: ExecTask.Goal) -> ExecTask.Result:
+        self._fsm.start_plan()
+        self._publish_feedback(goal_handle)
 
         self._plan_start_tag = self._detection_filter.get_most_frequent() or -1
+
+        if self._is_canceled(goal_handle):
+            return self._make_result(goal_handle)
+
         plan = self._request_plan(goal, self._plan_start_tag, self._blocked_tags)
         if plan is None:
             if self._robot_backend == "mock":
                 self.get_logger().info("Mock mode: executing without planner")
-                self._execute_segments([], goal, feedback_msg, goal_handle)
-                result = ExecTask.Result()
-                result.final_state = _STATE_SUCCEEDED
-                result.error_code = ""
-                result.message = "mock: planner unavailable, simulated success"
-                result.finished_time = self.get_clock().now().to_msg()
-                goal_handle.succeed()
-                return result
-            return self._finish_with_error(goal_handle, "INTERNAL", "planner unavailable")
+                self._fsm.plan_success()
+                self._execute_segments([], goal, goal_handle)
+                self._fsm.all_done()
+                return self._make_result(goal_handle)
+
+            self._fsm.error_code = "INTERNAL"
+            self._fsm.message = "planner unavailable"
+            if not self._is_canceled(goal_handle):
+                self._fsm.plan_failed()
+            return self._make_result(goal_handle)
 
         if plan.error_code != "OK":
-            return self._finish_with_error(goal_handle, plan.error_code, plan.message)
+            self._fsm.error_code = plan.error_code
+            self._fsm.message = plan.message or "planner returned error"
+            if not self._is_canceled(goal_handle):
+                self._fsm.plan_failed()
+            return self._make_result(goal_handle)
 
-        feedback_msg.state = _STATE_RUNNING
-        feedback_msg.next_tag = plan.next_tag
-        goal_handle.publish_feedback(feedback_msg)
+        self._fsm.plan_success()
+        self._publish_feedback(goal_handle, next_tag=plan.next_tag)
 
-        self._execute_segments(list(plan.segments), goal, feedback_msg, goal_handle)
+        self._execute_segments(list(plan.segments), goal, goal_handle)
 
-        result = ExecTask.Result()
-        result.final_state = _STATE_SUCCEEDED
-        result.error_code = ""
-        result.message = ""
-        result.finished_time = self.get_clock().now().to_msg()
-        goal_handle.succeed()
-        return result
+        if self._fsm.is_terminal():
+            return self._make_result(goal_handle)
+
+        self._fsm.all_done()
+        return self._make_result(goal_handle)
 
     def _request_plan(
         self, goal: ExecTask.Goal, start_tag: int,
@@ -175,8 +211,9 @@ class ExecLayerNode(Node):
         request.route_id = goal.route_id
         request.target_tags = goal.target_tags
         request.start_tag = start_tag
-        request.constraints = goal.constraints
-        request.constraints.avoid_tags = list(blocked)
+        request.constraints = copy.copy(goal.constraints) if goal.constraints else None
+        if request.constraints:
+            request.constraints.avoid_tags = list(blocked)
         request.deadline_ms = goal.deadline_ms
         request.allow_partial = False
         request.replan_reason = ""
@@ -188,37 +225,57 @@ class ExecLayerNode(Node):
             return None
         return future.result()
 
+    def _is_canceled(self, goal_handle) -> bool:
+        if goal_handle.is_cancel_requested and self._fsm.state != "canceled":
+            self._fsm.cancel()
+        return self._fsm.state == "canceled"
+
+    def _publish_feedback(
+        self,
+        goal_handle,
+        progress: float = 0.0,
+        current_tag: int = -1,
+        next_tag: int = -1,
+    ) -> None:
+        feedback = ExecTask.Feedback()
+        feedback.state = self._fsm.feedback_state
+        feedback.progress = progress
+        feedback.current_tag = current_tag
+        feedback.next_tag = next_tag
+        feedback.error_code = self._fsm.error_code
+        feedback.message = self._fsm.message
+        feedback.timestamp = self.get_clock().now().to_msg()
+        goal_handle.publish_feedback(feedback)
+
     def _execute_segments(
         self,
         segments: list[Segment],
         goal: ExecTask.Goal,
-        feedback: ExecTask.Feedback,
         goal_handle,
     ) -> None:
         idx = 0
         total = len(segments)
         while idx < total:
-            if self._cancel_requested or goal_handle.is_cancel_requested:
-                self._finish_canceled(goal_handle)
+            if self._cancel_requested or self._is_canceled(goal_handle):
                 return
 
             segment = segments[idx]
-            feedback.progress = idx / total if total > 0 else 1.0
-            feedback.current_tag = segment.from_tag
-            feedback.next_tag = segment.to_tag
-            goal_handle.publish_feedback(feedback)
+            self._publish_feedback(
+                goal_handle,
+                progress=idx / total if total > 0 else 1.0,
+                current_tag=segment.from_tag,
+                next_tag=segment.to_tag,
+            )
 
             success = self._drive_segment(segment, goal)
             if success:
                 idx += 1
                 continue
 
-            if self._cancel_requested:
+            if self._cancel_requested or self._is_canceled(goal_handle):
                 return
 
-            action = self._recovery_handler.handle_segment_failure(
-                segment,
-            )
+            action = self._recovery_handler.handle_segment_failure(segment)
 
             if action == SegmentFailureAction.RETRY:
                 self.get_logger().info(
@@ -228,71 +285,69 @@ class ExecLayerNode(Node):
                 time.sleep(_RETRY_WAIT_SEC)
                 continue
 
-            elif action == SegmentFailureAction.REROUTE:
-                self._blocked_tags.add(segment.to_tag)
+            # retries exhausted -> attempt reroute
+            self._blocked_tags.add(segment.to_tag)
 
-                current_pos = self._move_stack.current_position_tag() or -1
-                preview = self._request_plan(
-                    goal, current_pos, self._blocked_tags,
-                )
-                if not preview or not preview.segments:
-                    self._finish_with_error(
-                        goal_handle, "UNREACHABLE",
-                        f"no alternate route after tag {segment.to_tag}",
-                    )
-                    return
+            current_pos = self._move_stack.current_position_tag() or -1
+            preview = self._request_plan(
+                goal, current_pos, self._blocked_tags,
+            )
+            if not preview or not preview.segments:
+                self._fsm.error_code = "UNREACHABLE"
+                self._fsm.message = f"no alternate route after tag {segment.to_tag}"
+                self._fsm.fail()
+                return
 
+            self.get_logger().info(
+                f"Rerouting around tag {segment.to_tag}, "
+                f"alternate path possible, starting rollback"
+            )
+
+            self._fsm.request_replan()
+            self._publish_feedback(goal_handle)
+
+            rollback = self._move_stack.get_rollback_path(self._blocked_tags)
+            if rollback:
                 self.get_logger().info(
-                    f"Rerouting around tag {segment.to_tag}, "
-                    f"alternate path possible, starting rollback"
+                    f"Rolling back through {len(rollback)} segments"
                 )
+                for rb_seg in rollback:
+                    if self._cancel_requested:
+                        return
+                    self._drive_segment(rb_seg, goal)
+                    self._move_stack.pop()
 
-                rollback = self._move_stack.get_rollback_path(self._blocked_tags)
-                if rollback:
-                    self.get_logger().info(
-                        f"Rolling back through {len(rollback)} segments"
-                    )
-                    for rb_seg in rollback:
-                        if self._cancel_requested:
-                            self._finish_canceled(goal_handle)
-                            return
-                        self._drive_segment(rb_seg, goal)
-                        self._move_stack.pop()
+            current_pos = self._move_stack.current_position_tag() or -1
+            self._publish_feedback(goal_handle, current_tag=current_pos)
 
-                current_pos = self._move_stack.current_position_tag() or -1
-                feedback.current_tag = current_pos
-                goal_handle.publish_feedback(feedback)
-
-                new_plan = self._request_plan(
-                    goal, current_pos, self._blocked_tags,
+            new_plan = self._request_plan(
+                goal, current_pos, self._blocked_tags,
+            )
+            if new_plan and new_plan.segments:
+                self.get_logger().info(
+                    f"New reroute plan: {len(new_plan.segments)} segments"
                 )
-                if new_plan and new_plan.segments:
-                    self.get_logger().info(
-                        f"New reroute plan: {len(new_plan.segments)} segments"
-                    )
-                    segments = list(new_plan.segments)
-                    idx = 0
-                    total = len(segments)
-                    self._recovery_handler.reset_retries(segment)
-                    continue
+                segments = list(new_plan.segments)
+                idx = 0
+                total = len(segments)
+                self._recovery_handler.reset_retries(segment)
+                self._fsm.replan_success()
+                self._publish_feedback(goal_handle, next_tag=new_plan.next_tag)
+                continue
 
-                self._finish_with_error(
-                    goal_handle, "UNREACHABLE",
-                    f"no alternate route after rollback from tag {segment.to_tag}",
-                )
-                return
+            self._fsm.error_code = "UNREACHABLE"
+            self._fsm.message = (
+                f"no alternate route after rollback from tag {segment.to_tag}"
+            )
+            self._fsm.replan_failed()
+            return
 
-            else:
-                self._finish_with_error(
-                    goal_handle, "UNREACHABLE",
-                    f"failed to reach tag {segment.to_tag}",
-                )
-                return
-
-        feedback.progress = 1.0
-        feedback.current_tag = segments[-1].to_tag if segments else -1
-        feedback.next_tag = -1
-        goal_handle.publish_feedback(feedback)
+        self._publish_feedback(
+            goal_handle,
+            progress=1.0,
+            current_tag=segments[-1].to_tag if segments else -1,
+            next_tag=-1,
+        )
 
     def _drive_segment(self, segment: Segment, goal: ExecTask.Goal) -> bool:
         to_tag = segment.to_tag
@@ -439,24 +494,24 @@ class ExecLayerNode(Node):
                 return
         self._robot.damp()
 
-    def _finish_with_error(
-        self, goal_handle, code: str, message: str,
-    ) -> ExecTask.Result:
+    def _make_result(self, goal_handle) -> ExecTask.Result:
         result = ExecTask.Result()
-        result.final_state = _STATE_FAILED
-        result.error_code = code
-        result.message = message
+        result.final_state = self._fsm.final_state
+        result.error_code = self._fsm.error_code
+        result.message = self._fsm.message
         result.finished_time = self.get_clock().now().to_msg()
-        goal_handle.abort()
-        return result
 
-    def _finish_canceled(self, goal_handle) -> ExecTask.Result:
-        result = ExecTask.Result()
-        result.final_state = _STATE_CANCELED
-        result.error_code = ""
-        result.message = ""
-        result.finished_time = self.get_clock().now().to_msg()
-        goal_handle.canceled()
+        if result.final_state == "succeeded":
+            goal_handle.succeed()
+        elif result.final_state == "failed":
+            goal_handle.abort()
+        elif result.final_state == "canceled":
+            goal_handle.canceled()
+        else:
+            self.get_logger().warn(f"Unexpected final_state: {result.final_state}")
+            goal_handle.abort()
+
+        self._goal_handle = None
         return result
 
 
