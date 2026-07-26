@@ -1,12 +1,13 @@
 import { useState, useCallback } from "react"
 import type { TaskRecord } from "./types/task"
 import { useTaskWS } from "./hooks/useTaskWS"
+import { ToastProvider } from "./components/Toast"
 import TaskNew from "./pages/TaskNew"
 import TaskList from "./pages/TaskList"
 import TaskDetail from "./pages/TaskDetail"
 import MapEditor from "./pages/MapEditor"
 
-export default function App() {
+function Main() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [wsUpdates, setWsUpdates] = useState<Record<string, Partial<TaskRecord>>>({})
@@ -89,5 +90,13 @@ export default function App() {
         </div>
       </main>
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <Main />
+    </ToastProvider>
   )
 }

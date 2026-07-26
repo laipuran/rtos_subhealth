@@ -9,16 +9,32 @@ interface Props {
   wsUpdates: Record<string, Partial<TaskRecord>>
 }
 
+const PAGE_SIZE = 20
+
 export default function TaskList({ refreshKey, onSelect, wsUpdates }: Props) {
   const [tasks, setTasks] = useState<TaskRecord[]>([])
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    listTasks()
-      .then((data) => setTasks(data.tasks))
+    setOffset(0)
+    setTasks([])
+    listTasks(0, PAGE_SIZE)
+      .then((data) => {
+        setTasks(data.tasks)
+        setTotal(data.total)
+      })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [refreshKey])
+
+  const loadMore = async () => {
+    const newOffset = offset + PAGE_SIZE
+    const data = await listTasks(newOffset, PAGE_SIZE)
+    setTasks((prev) => [...prev, ...data.tasks])
+    setOffset(newOffset)
+  }
 
   const merged = tasks.map((t) => {
     const upd = wsUpdates[t.goal_id]
@@ -27,11 +43,10 @@ export default function TaskList({ refreshKey, onSelect, wsUpdates }: Props) {
 
   if (loading) return <p className="text-gray-400 text-sm">Loading...</p>
 
-  if (merged.length === 0) return <p className="text-gray-400 text-sm">No tasks yet.</p>
-
   return (
     <div className="space-y-2">
-      <h2 className="text-lg font-bold">Tasks</h2>
+      <h2 className="text-lg font-bold">Tasks ({total})</h2>
+      {merged.length === 0 && <p className="text-gray-400 text-sm">No tasks yet.</p>}
       {merged.map((t) => (
         <div
           key={t.goal_id}
@@ -51,6 +66,14 @@ export default function TaskList({ refreshKey, onSelect, wsUpdates }: Props) {
           {t.error_code && <p className="text-xs text-red-500 mt-1">{t.error_code}</p>}
         </div>
       ))}
+      {tasks.length < total && (
+        <button
+          onClick={loadMore}
+          className="w-full text-center text-sm text-blue-600 hover:underline py-2"
+        >
+          Load more ({total - offset - PAGE_SIZE > 0 ? total - offset - PAGE_SIZE : 0} remaining)
+        </button>
+      )}
     </div>
   )
 }

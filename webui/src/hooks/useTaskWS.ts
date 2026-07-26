@@ -4,17 +4,24 @@ import type { WsMessage } from "../types/task"
 type WsCallback = (msg: WsMessage) => void
 
 const WS_URL = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/v1/events`
+const MAX_RETRY_DELAY = 30000
 
 export function useTaskWS(onMessage: WsCallback) {
   const wsRef = useRef<WebSocket | null>(null)
   const onMsgRef = useRef(onMessage)
+  const retryCountRef = useRef(0)
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const mountedRef = useRef(true)
   onMsgRef.current = onMessage
 
   const connect = useCallback(() => {
+    if (!mountedRef.current) return
     if (wsRef.current?.readyState === WebSocket.OPEN) return
 
     const ws = new WebSocket(WS_URL)
-    ws.onopen = () => console.log("WS connected")
+    ws.onopen = () => {
+      retryCountRef.current = 0
+    }
     ws.onmessage = (e) => {
       try {
         const msg: WsMessage = JSON.parse(e.data)
@@ -25,15 +32,21 @@ export function useTaskWS(onMessage: WsCallback) {
     }
     ws.onclose = () => {
       wsRef.current = null
-      setTimeout(connect, 3000)
+      if (!mountedRef.current) return
+      const delay = Math.min(1000 * Math.pow(2, retryCountRef.current), MAX_RETRY_DELAY)
+      retryCountRef.current++
+      retryTimerRef.current = setTimeout(connect, delay)
     }
     ws.onerror = () => ws.close()
     wsRef.current = ws
   }, [])
 
   useEffect(() => {
+    mountedRef.current = true
     connect()
     return () => {
+      mountedRef.current = false
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
       wsRef.current?.close()
       wsRef.current = null
     }

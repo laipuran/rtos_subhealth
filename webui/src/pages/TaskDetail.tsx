@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { getTask, cancelTask } from "../api/tasks"
 import type { TaskRecord } from "../types/task"
 import TaskStatusBadge from "../components/TaskStatusBadge"
+import { useToast } from "../components/Toast"
 
 interface Props {
   goalId: string | null
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export default function TaskDetail({ goalId, onBack, liveUpdates }: Props) {
+  const { toast } = useToast()
   const [task, setTask] = useState<TaskRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [canceling, setCanceling] = useState(false)
@@ -31,8 +33,9 @@ export default function TaskDetail({ goalId, onBack, liveUpdates }: Props) {
     setCanceling(true)
     try {
       await cancelTask(goalId)
-    } catch {
-      /* ignore */
+      toast("Cancel request sent", "success")
+    } catch (err: any) {
+      toast(err.message || "cancel failed", "error")
     }
     setCanceling(false)
   }

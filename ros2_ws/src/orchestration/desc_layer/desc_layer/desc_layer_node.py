@@ -21,7 +21,11 @@ _STATUS_ABORTED = 6
 class DescLayerNode(Node):
     def __init__(self) -> None:
         super().__init__("desc_layer_node")
-        self._task_store = TaskStore()
+        import os as _os
+        db_dir = self.declare_parameter("db_dir", "").value
+        if not db_dir:
+            db_dir = _os.path.join(_os.getcwd(), "config")
+        self._task_store = TaskStore(db_dir=db_dir)
         self._goal_queue: queue.Queue[Optional[dict]] = queue.Queue()
         self._goal_handles: dict[str, "GoalHandle"] = {}
 
@@ -47,7 +51,11 @@ class DescLayerNode(Node):
                 maps_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "config", "maps")
                 maps_dir = os.path.normpath(maps_dir)
 
-        init_app(self._task_store, self._goal_queue, maps_dir)
+        api_token = self.declare_parameter("api_token", "").value
+        if api_token:
+            self.get_logger().info("API token authentication enabled")
+
+        init_app(self._task_store, self._goal_queue, maps_dir, api_token)
         port = self.declare_parameter("http_port", 5000).value
         t = threading.Thread(
             target=flask_app.run,

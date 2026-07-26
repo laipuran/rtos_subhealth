@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import threading
+import uuid
 from typing import Any, Optional
 
 import flask
@@ -21,22 +23,62 @@ goal_queue: "queue.Queue[Optional[dict]]" = None
 maps_path: str = ""
 ws_clients: list = []
 _ws_lock = threading.Lock()
+_api_token: str = ""
 
 
 def init_app(store: TaskStore, queue: "queue.Queue[Optional[dict]]",
-             maps_dir: str = "") -> None:
-    global task_store, goal_queue, maps_path
+             maps_dir: str = "", api_token: str = "") -> None:
+    global task_store, goal_queue, maps_path, _api_token
     task_store = store
     goal_queue = queue
     maps_path = maps_dir
+    _api_token = api_token
 
 
-def _json_resp(data: Any, status: int = 200) -> Response:
-    return flask.Response(
+def _trace_id() -> str:
+    return uuid.uuid4().hex[:16]
+
+
+def _api_err(code: str, message: str, status: int = 400, details: Any = None,
+             tid: str = "") -> Response:
+    body = {"error": {"code": code, "message": message}}
+    if details is not None:
+        body["error"]["details"] = details
+    if tid:
+        body["trace_id"] = tid
+    resp = flask.Response(
+        json.dumps(body, ensure_ascii=False),
+        status=status,
+        content_type="application/json",
+    )
+    if tid:
+        resp.headers["X-Trace-Id"] = tid
+    return resp
+
+
+def _ok_resp(data: Any, status: int = 200, tid: str = "",
+             headers: dict = None) -> Response:
+    if isinstance(data, dict) and tid:
+        data["trace_id"] = tid
+    resp = flask.Response(
         json.dumps(data, ensure_ascii=False),
         status=status,
         content_type="application/json",
     )
+    if tid:
+        resp.headers["X-Trace-Id"] = tid
+    if headers:
+        for k, v in headers.items():
+            resp.headers[k] = v
+    return resp
+
+
+def _check_auth(tid: str) -> Optional[Response]:
+    if not _api_token:
+        return None
+    token = request.headers.get("X-API-Key", "")
+    if token != _api_token:
+        return _api_err("UNAUTHORIZED", "invalid or missing X-API-Key", 401, tid=tid)
 
 
 def _load_map(scene: str = "default") -> Optional[dict]:
@@ -47,21 +89,31 @@ def _load_map(scene: str = "default") -> Optional[dict]:
         return json.load(f)
 
 
+def _load_map_etag(scene: str = "default") -> Optional[tuple[dict, str]]:
+    filepath = os.path.join(maps_path, f"{scene}.json")
+    if not os.path.exists(filepath):
+        return None
+    with open(filepath, "rb") as f:
+        data = f.read()
+    etag = hashlib.md5(data).hexdigest()
+    return (json.loads(data), etag)
+
+
 def _save_map(data: dict, scene: str = "default") -> None:
     filepath = os.path.join(maps_path, f"{scene}.json")
     with open(filepath, "w") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
-def _validate_goal(body: dict) -> Optional[tuple[str, int]]:
+def _validate_goal(body: dict) -> Optional[tuple[str, str, int]]:
     goal = body.get("goal")
     if not goal:
-        return "missing goal field", 400
+        return ("INVALID_GOAL", "missing goal field", 400)
     if not goal.get("type"):
-        return "missing goal.type", 400
+        return ("INVALID_GOAL", "missing goal.type", 400)
     valid_types = {"go_to_tag", "patrol_route", "hold"}
     if goal["type"] not in valid_types:
-        return f"invalid type, must be one of {valid_types}", 400
+        return ("INVALID_GOAL", f"type must be one of {valid_types}", 400)
     return None
 
 
@@ -84,18 +136,14 @@ def _check_conflicts(old: dict, new: dict) -> Optional[dict]:
     old_tag_ids = set(old.get("tags", {}).keys())
     new_tag_ids = set(new.get("tags", {}).keys())
     deleted_tags = old_tag_ids - new_tag_ids
-
     old_edge_keys = {(e["from"], e["to"]) for e in old.get("edges", [])}
     new_edge_keys = {(e["from"], e["to"]) for e in new.get("edges", [])}
     deleted_edges = old_edge_keys - new_edge_keys
-
     old_route_keys = set(old.get("routes", {}).keys())
     new_route_keys = set(new.get("routes", {}).keys())
     deleted_routes = old_route_keys - new_route_keys
-
     if not deleted_tags and not deleted_edges and not deleted_routes:
         return None
-
     active_tasks = task_store.list_active()
     blocking = []
     for t in active_tasks:
@@ -114,16 +162,17 @@ def _check_conflicts(old: dict, new: dict) -> Optional[dict]:
                 "state": t.state,
                 "reasons": reasons,
             })
-
     if not blocking:
         return None
-
     return {
-        "error": "cannot delete items used by active task(s)",
-        "deleted_tags": sorted(deleted_tags),
-        "deleted_edges": [{"from": e[0], "to": e[1]} for e in deleted_edges],
-        "deleted_routes": sorted(deleted_routes),
-        "blocking_tasks": blocking,
+        "code": "CONFLICT",
+        "message": "cannot delete items used by active task(s)",
+        "details": {
+            "deleted_tags": sorted(deleted_tags),
+            "deleted_edges": [{"from": e[0], "to": e[1]} for e in deleted_edges],
+            "deleted_routes": sorted(deleted_routes),
+            "blocking_tasks": blocking,
+        },
     }
 
 
@@ -140,18 +189,33 @@ def broadcast(goal_id: str, event_type: str, data: dict) -> None:
             ws_clients.remove(ws)
 
 
+# --- Before Request ---
+
+
+@app.before_request
+def _attach_trace_id():
+    tid = request.headers.get("X-Trace-Id", "")
+    if not tid:
+        tid = uuid.uuid4().hex[:16]
+    request.trace_id = tid
+
+
 # --- HTTP Routes ---
 
 
 @app.route("/api/v1/tasks", methods=["POST"])
 def create_task():
+    tid = request.trace_id
+    auth_err = _check_auth(tid)
+    if auth_err:
+        return auth_err
     body = request.get_json(force=True, silent=True)
     if not body:
-        return _json_resp({"error": "invalid JSON body"}, 400)
+        return _api_err("INVALID_JSON", "request body is not valid JSON", 400, tid=tid)
 
     err = _validate_goal(body)
     if err:
-        return _json_resp({"error": err[0]}, err[1])
+        return _api_err(err[0], err[1], err[2], tid=tid)
 
     goal = _build_goal_from_body(body)
     record = TaskRecord(
@@ -161,49 +225,72 @@ def create_task():
         message="",
     )
     if not record.goal_id:
-        import uuid
         record.goal_id = str(uuid.uuid4())
 
     task_store.add(record)
     goal_queue.put({"goal_id": record.goal_id, "target_device": body.get("target_device", "")})
 
-    return _json_resp(
+    return _ok_resp(
         {
             "task_id": record.goal_id,
             "status": "accepted",
             "type": goal.type,
         },
-        201,
+        201, tid=tid,
     )
 
 
 @app.route("/api/v1/tasks", methods=["GET"])
 def list_tasks():
+    tid = request.trace_id
+    auth_err = _check_auth(tid)
+    if auth_err:
+        return auth_err
     records = task_store.list_all()
-    return _json_resp(
+    records.sort(key=lambda r: r.created_at, reverse=True)
+    total = len(records)
+    try:
+        offset = max(0, int(request.args.get("offset", "0")))
+        limit = max(1, min(200, int(request.args.get("limit", "50"))))
+    except ValueError:
+        return _api_err("INVALID_PARAM", "offset and limit must be integers", 400, tid=tid)
+    page = records[offset:offset + limit]
+    return _ok_resp(
         {
-            "tasks": [r.to_dict() for r in sorted(records, key=lambda r: r.created_at, reverse=True)]
-        }
+            "tasks": [r.to_dict() for r in page],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        },
+        tid=tid,
     )
 
 
 @app.route("/api/v1/tasks/<goal_id>", methods=["GET"])
 def get_task(goal_id: str):
+    tid = request.trace_id
+    auth_err = _check_auth(tid)
+    if auth_err:
+        return auth_err
     rec = task_store.get(goal_id)
     if rec is None:
-        return _json_resp({"error": "task not found"}, 404)
-    return _json_resp(rec.to_dict())
+        return _api_err("NOT_FOUND", f"task {goal_id} not found", 404, tid=tid)
+    return _ok_resp(rec.to_dict(), tid=tid)
 
 
 @app.route("/api/v1/tasks/<goal_id>/cancel", methods=["POST"])
 def cancel_task(goal_id: str):
+    tid = request.trace_id
+    auth_err = _check_auth(tid)
+    if auth_err:
+        return auth_err
     rec = task_store.get(goal_id)
     if rec is None:
-        return _json_resp({"error": "task not found"}, 404)
+        return _api_err("NOT_FOUND", f"task {goal_id} not found", 404, tid=tid)
     if rec.state in ("succeeded", "failed", "canceled"):
-        return _json_resp({"error": f"task already in final state: {rec.state}"}, 400)
+        return _api_err("INVALID_STATE", f"task already in final state: {rec.state}", 400, tid=tid)
     goal_queue.put({"goal_id": goal_id, "cancel": True})
-    return _json_resp({"task_id": goal_id, "status": "cancel_accepted"})
+    return _ok_resp({"task_id": goal_id, "status": "cancel_accepted"}, tid=tid)
 
 
 # --- Map Routes ---
@@ -211,27 +298,47 @@ def cancel_task(goal_id: str):
 
 @app.route("/api/v1/map", methods=["GET"])
 def get_map():
+    tid = request.trace_id
+    auth_err = _check_auth(tid)
+    if auth_err:
+        return auth_err
     scene = request.args.get("scene", "default")
-    data = _load_map(scene)
-    if data is None:
-        return _json_resp({"error": f"map '{scene}' not found"}, 404)
-    return _json_resp(data)
+    result = _load_map_etag(scene)
+    if result is None:
+        return _api_err("NOT_FOUND", f"map '{scene}' not found", 404, tid=tid)
+
+    data, etag = result
+    if request.headers.get("If-None-Match", "") == etag:
+        resp = flask.Response(status=304)
+        if tid:
+            resp.headers["X-Trace-Id"] = tid
+        return resp
+
+    return _ok_resp(data, headers={"ETag": etag}, tid=tid)
 
 
 @app.route("/api/v1/map", methods=["PUT"])
 def put_map():
+    tid = request.trace_id
+    auth_err = _check_auth(tid)
+    if auth_err:
+        return auth_err
     scene = request.args.get("scene", "default")
     body = request.get_json(force=True, silent=True)
     if not body:
-        return _json_resp({"error": "invalid JSON body"}, 400)
+        return _api_err("INVALID_JSON", "request body is not valid JSON", 400, tid=tid)
 
     old = _load_map(scene)
-    conflict = _check_conflicts(old, body) if old else None
-    if conflict:
-        return _json_resp(conflict, 409)
+    if old:
+        conflict = _check_conflicts(old, body)
+        if conflict:
+            return _api_err(conflict["code"], conflict["message"], 409,
+                            details=conflict["details"], tid=tid)
 
     _save_map(body, scene)
-    return _json_resp({"status": "saved", "scene": scene})
+    # Re-read to compute fresh etag
+    _, etag = _load_map_etag(scene) or ("", "")
+    return _ok_resp({"status": "saved", "scene": scene}, headers={"ETag": etag}, tid=tid)
 
 
 # --- WebSocket Route ---
@@ -239,6 +346,12 @@ def put_map():
 
 @sock.route("/api/v1/events")
 def events(ws):
+    tid = uuid.uuid4().hex[:16]
+    if _api_token:
+        token = ws.receive(timeout=5)
+        if token != _api_token:
+            ws.send(json.dumps({"error": {"code": "UNAUTHORIZED", "message": "auth failed"}}))
+            return
     with _ws_lock:
         ws_clients.append(ws)
     try:
