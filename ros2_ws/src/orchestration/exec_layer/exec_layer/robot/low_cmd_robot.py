@@ -162,6 +162,19 @@ class LowCmdRobot(RobotInterface):
     def is_connected(self) -> bool:
         return self._connected
 
+    def move_blocking(self, vx: float, vy: float, vyaw: float, duration: float) -> None:
+        """Blocking move: keeps sending gait commands for `duration` seconds.
+        Returns when time is up or cancel is requested via damp() / stand_up().
+        """
+        self.move(vx, vy, vyaw)
+        start = time.time()
+        while time.time() - start < duration:
+            if not self._is_moving:
+                break
+            self._gait_tick()
+            time.sleep(0.002)
+        self.damp()
+
     def _gait_tick(self) -> None:
         """Run a single iteration of the gait controller.
         Should be called at ~500Hz during movement.
