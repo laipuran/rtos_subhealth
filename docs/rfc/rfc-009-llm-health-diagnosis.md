@@ -131,7 +131,7 @@ string error_message
    - **异常**：规则引擎（如 SpO2<90%、收缩压>140）即时触发。
    - **手动**：desc_layer 收到 `POST /api/v1/diagnostics` 后发布 `/diagnosis/trigger`。
 4. 触发后构造结构化快照文本 → RAG 检索 top-k 医学资料 → 组装 prompt → 调用 LLM（异步，时延预算 2-10 s）。
-5. 对 LLM 输出做 JSON 校验；失败时按 schema 重试一次。
+5. 对 LLM 输出做 JSON 校验；失败时按 schema 重试（最多 3 次，含首次）。
 6. 发布 `DiagnosisResult` 到 `/diagnosis/results`；desc_layer 订阅后写入 SQLite 并 WS 广播。
 7. 失败退路：LLM 超时/不可用时，发布带 `error_code` 的诊断结果并保留原始快照，可重试。
 
@@ -139,7 +139,7 @@ string error_message
 
 ## 7. 风险与替代
 **风险：**
-1. LLM 输出不稳定 → JSON schema 约束 + 校验重试（<3 次）。
+1. LLM 输出不稳定 → JSON schema 约束 + 校验重试（最多 3 次，含首次）。
 2. embedding 端点不可用 → 关键词/规则检索回退。
 3. 医学资料缺失 → 先无 RAG 跑通链路，`docs/medical/` 提供占位目录。
 
