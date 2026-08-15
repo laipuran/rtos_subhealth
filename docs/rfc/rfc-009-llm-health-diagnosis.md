@@ -114,7 +114,7 @@ string error_message
 
 ### 5.4 WebSocket 事件
 
-- `event: "diagnosis"`，载荷：`{ diagnosis_id, trigger_type, severity, summary, possible_causes, recommendations, confidence, timestamp, trace_id }`。
+- `event: "diagnosis"`，载荷：`{ diagnosis_id, trigger_type, severity, summary, possible_causes, recommendations, confidence, timestamp, trace_id }`（其中 `trace_id` 与 `diagnosis_id` 相同，用于链路追踪）。
 
 ### 5.5 LLM 接口
 
