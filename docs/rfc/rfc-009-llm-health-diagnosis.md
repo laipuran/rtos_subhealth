@@ -10,7 +10,7 @@
 | 日期 | 变更 |
 |---|---|
 | 2026-08-07 | 初版 |
-| 2026-08-15 | 依据 PR #15 评审意见修订：改为每传感器独立 topic 的通用单指标消息 `PhysioSample`；`DiagnosisResult` 改为多源 `source_ids`；补充 confidence 阈值筛选、触发任务并发与异常优先级约定 |
+| 2026-08-15 | 依据后续意见修订：改为每传感器独立 topic 的通用单指标消息 `PhysioSample`；`DiagnosisResult` 改为多源 `source_ids`；补充 confidence 阈值筛选、触发任务并发与异常优先级约定 |
 
 ---
 
