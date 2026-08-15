@@ -100,9 +100,9 @@ string error_message
 
 | Topic | 类型 | QoS | 频率 | 说明 |
 |---|---|---|---|---|
-| `/physio/vitals` | `physio_interfaces/VitalsSample` | RELIABLE, depth 10 | 1 Hz | 生理采样输入 |
-| `/diagnosis/trigger` | `std_msgs/String` | RELIABLE, depth 10 | 事件驱动 | 手动触发（携带 trigger_type） |
-| `/diagnosis/results` | `ros_interfaces/DiagnosisResult` | RELIABLE, depth 10 | 事件驱动 | 诊断结果输出 |
+| `/physio/vitals` | `physio_interfaces/msg/VitalsSample` | RELIABLE, depth 10 | 1 Hz | 生理采样输入 |
+| `/diagnosis/trigger` | `std_msgs/msg/String` | RELIABLE, depth 10 | 事件驱动 | 手动触发（String.data: "manual"） |
+| `/diagnosis/results` | `ros_interfaces/msg/DiagnosisResult` | RELIABLE, depth 10 | 事件驱动 | 诊断结果输出 |
 
 ### 5.3 HTTP API（desc_layer，遵循 RFC-005 规范）
 
