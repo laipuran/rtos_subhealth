@@ -72,7 +72,7 @@ float32 heart_rate        # 心率 bpm
 float32 systolic_mmhg     # 收缩压
 float32 diastolic_mmhg    # 舒张压
 float32 body_temp_c       # 体温 ℃
-float32 respiratory_rate  # 呼吸频率 bpm
+float32 respiratory_rate  # 呼吸频率 次/分钟
 bool spo2_valid
 bool blood_pressure_valid
 bool heart_rate_valid
