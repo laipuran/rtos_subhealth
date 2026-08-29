@@ -13,13 +13,16 @@ from flask_sock import Sock
 
 from ros_interfaces.action import ExecTask
 
+from .diagnosis_store import DiagnosisRecord, DiagnosisStore
 from .task_store import TaskRecord, TaskStore
 
 app = Flask(__name__)
 sock = Sock(app)
 
 task_store: TaskStore = None
+diagnosis_store: Optional[DiagnosisStore] = None
 goal_queue: "queue.Queue[Optional[dict]]" = None
+trigger_pub = None
 maps_path: str = ""
 ws_clients: list = []
 _ws_lock = threading.Lock()
@@ -27,12 +30,16 @@ _api_token: str = ""
 
 
 def init_app(store: TaskStore, queue: "queue.Queue[Optional[dict]]",
-             maps_dir: str = "", api_token: str = "") -> None:
+              maps_dir: str = "", api_token: str = "",
+              diagnosis_store: Optional[DiagnosisStore] = None,
+              trigger_pub=None) -> None:
     global task_store, goal_queue, maps_path, _api_token
     task_store = store
     goal_queue = queue
     maps_path = maps_dir
     _api_token = api_token
+    globals()["diagnosis_store"] = diagnosis_store
+    globals()["trigger_pub"] = trigger_pub
 
 
 def _trace_id() -> str:
@@ -189,6 +196,21 @@ def broadcast(goal_id: str, event_type: str, data: dict) -> None:
             ws_clients.remove(ws)
 
 
+def broadcast_diagnosis(payload: dict) -> None:
+    """Broadcast a `diagnosis` WS event (RFC-009 §5.4)."""
+    payload = dict(payload, event="diagnosis")
+    data = json.dumps(payload, ensure_ascii=False)
+    with _ws_lock:
+        dead = []
+        for ws in ws_clients:
+            try:
+                ws.send(data)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            ws_clients.remove(ws)
+
+
 # --- Before Request ---
 
 
@@ -339,6 +361,65 @@ def put_map():
     # Re-read to compute fresh etag
     _, etag = _load_map_etag(scene) or ("", "")
     return _ok_resp({"status": "saved", "scene": scene}, headers={"ETag": etag}, tid=tid)
+
+
+# --- Diagnostics Routes (RFC-009) ---
+
+
+@app.route("/api/v1/diagnostics", methods=["POST"])
+def trigger_diagnosis():
+    tid = request.trace_id
+    auth_err = _check_auth(tid)
+    if auth_err:
+        return auth_err
+    if diagnosis_store is None or trigger_pub is None:
+        return _api_err("INTERNAL", "diagnosis layer not available", 503, tid=tid)
+    # 发布手动触发到 /diagnosis/trigger，由 diagnosis_layer 执行。
+    # 把本次请求的 trace_id 透传为 "manual:<trace_id>"，使其成为 diagnosis_id，
+    # 从而贯穿到 WS 事件的 trace_id 字段（RFC-005 §5.3.4 / RFC-009 §5.4）。
+    from std_msgs.msg import String as StringMsg
+    trigger_pub.publish(StringMsg(data=f"manual:{tid}"))
+    return _ok_resp({"status": "triggered", "trigger_type": "manual"}, 202, tid=tid)
+
+
+@app.route("/api/v1/diagnostics", methods=["GET"])
+def list_diagnoses():
+    tid = request.trace_id
+    auth_err = _check_auth(tid)
+    if auth_err:
+        return auth_err
+    if diagnosis_store is None:
+        return _api_err("INTERNAL", "diagnosis store not available", 503, tid=tid)
+    try:
+        offset = max(0, int(request.args.get("offset", "0")))
+        limit = max(1, min(200, int(request.args.get("limit", "50"))))
+    except ValueError:
+        return _api_err("INVALID_PARAM", "offset and limit must be integers", 400, tid=tid)
+    records = diagnosis_store.list_all(offset=offset, limit=limit)
+    total = diagnosis_store.count()
+    return _ok_resp(
+        {
+            "diagnoses": [r.to_dict() for r in records],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        },
+        tid=tid,
+    )
+
+
+@app.route("/api/v1/diagnostics/<diagnosis_id>", methods=["GET"])
+def get_diagnosis(diagnosis_id: str):
+    tid = request.trace_id
+    auth_err = _check_auth(tid)
+    if auth_err:
+        return auth_err
+    if diagnosis_store is None:
+        return _api_err("INTERNAL", "diagnosis store not available", 503, tid=tid)
+    rec = diagnosis_store.get(diagnosis_id)
+    if rec is None:
+        return _api_err("NOT_FOUND", f"diagnosis {diagnosis_id} not found", 404, tid=tid)
+    return _ok_resp(rec.to_dict(), tid=tid)
 
 
 # --- WebSocket Route ---

@@ -9,8 +9,11 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 
 from ros_interfaces.action import ExecTask
+from ros_interfaces.msg import DiagnosisResult
+from std_msgs.msg import String
 
-from .http_server import broadcast, init_app
+from .http_server import broadcast, broadcast_diagnosis, init_app
+from .diagnosis_store import DiagnosisRecord, DiagnosisStore
 from .task_store import TaskRecord, TaskStore
 
 _STATUS_SUCCEEDED = 4
@@ -26,7 +29,19 @@ class DescLayerNode(Node):
         if not db_dir:
             db_dir = _os.path.join(_os.getcwd(), "config")
         self._task_store = TaskStore(db_dir=db_dir)
+        self._diagnosis_store = DiagnosisStore(db_dir=db_dir)
         self._goal_queue: queue.Queue[Optional[dict]] = queue.Queue()
+        self._trigger_pub = self.create_publisher(String, "/diagnosis/trigger", 10)
+        self._diagnosis_sub = self.create_subscription(
+            DiagnosisResult, "/diagnosis/results", self._on_diagnosis, 10)
+
+        # RFC-009 §9.4: diagnosis retention / cleanup policy.
+        self._diagnosis_retention_s = float(
+            self.declare_parameter("diagnosis_retention_s", 0.0).value)
+        cleanup_interval_s = float(
+            self.declare_parameter("diagnosis_cleanup_interval_s", 3600.0).value)
+        self.create_timer(cleanup_interval_s, self._cleanup_diagnoses)
+
         self._goal_handles: dict[str, "GoalHandle"] = {}
 
         exec_action_name = self.declare_parameter("exec_action_name", "exec_task").value
@@ -55,7 +70,8 @@ class DescLayerNode(Node):
         if api_token:
             self.get_logger().info("API token authentication enabled")
 
-        init_app(self._task_store, self._goal_queue, maps_dir, api_token)
+        init_app(self._task_store, self._goal_queue, maps_dir, api_token,
+                  diagnosis_store=self._diagnosis_store, trigger_pub=self._trigger_pub)
         port = self.declare_parameter("http_port", 5000).value
         t = threading.Thread(
             target=flask_app.run,
@@ -64,6 +80,47 @@ class DescLayerNode(Node):
         )
         t.start()
         self.get_logger().info(f"HTTP server started on 0.0.0.0:{port}, maps_dir={maps_dir}")
+
+    def _on_diagnosis(self, msg: DiagnosisResult) -> None:
+        rec = DiagnosisRecord(
+            diagnosis_id=msg.diagnosis_id,
+            source_ids=list(msg.source_ids),
+            trigger_type=msg.trigger_type,
+            severity=msg.severity,
+            summary=msg.summary,
+            possible_causes=list(msg.possible_causes),
+            recommendations=list(msg.recommendations),
+            confidence=float(msg.confidence),
+            disclaimer=msg.disclaimer,
+            raw_prompt=msg.raw_prompt,
+            error_code=msg.error_code,
+            error_message=msg.error_message,
+        )
+        self._diagnosis_store.add(rec)
+        ts = msg.timestamp.sec + msg.timestamp.nanosec / 1e9
+        broadcast_diagnosis({
+            "diagnosis_id": msg.diagnosis_id,
+            "trigger_type": msg.trigger_type,
+            "severity": msg.severity,
+            "summary": msg.summary,
+            "possible_causes": list(msg.possible_causes),
+            "recommendations": list(msg.recommendations),
+            "confidence": float(msg.confidence),
+            "timestamp": ts,
+            "trace_id": msg.diagnosis_id,
+            "error_code": msg.error_code,
+            "error_message": msg.error_message,
+        })
+        self.get_logger().info(
+            f"diagnosis {msg.diagnosis_id} stored (severity={msg.severity}, "
+            f"error={msg.error_code or '-'})")
+
+    def _cleanup_diagnoses(self) -> None:
+        if self._diagnosis_retention_s <= 0:
+            return
+        deleted = self._diagnosis_store.purge_older_than(self._diagnosis_retention_s)
+        if deleted:
+            self.get_logger().info(f"purged {deleted} old diagnosis records")
 
     def _process_queue(self) -> None:
         try:
