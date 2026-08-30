@@ -25,5 +25,13 @@ fi
 # 环境 + DDS
 source setup.sh
 
+# 加载 AI 接入配置（LLM_*/EMBEDDING_* 等，见 .env.example）。
+# .env 已被 .gitignore 忽略，不会进入版本库。
+if [ -f "$SCRIPT_DIR/.env" ]; then
+  set -a
+  . "$SCRIPT_DIR/.env"
+  set +a
+fi
+
 # 启动 ROS2
 ros2 launch desc_layer run.launch.py "backend:=$BACKEND"

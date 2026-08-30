@@ -13,6 +13,7 @@ from physio_interfaces.msg import PhysioSample
 from ros_interfaces.msg import DiagnosisResult
 
 from .aggregator import Sample, Window, build_snapshot, is_anomalous, parse_thresholds
+from .config import build_config
 from .llm_client import LLMClient, build_messages, parse_diagnosis, passes_confidence
 from .rag import EmbeddingClient, Retriever
 
@@ -44,25 +45,39 @@ class DiagnosisLayerNode(Node):
         ).value
         self._window_seconds = float(self.declare_parameter("window_seconds", 60.0).value)
         self._periodic_interval_s = float(self.declare_parameter("periodic_interval_s", 60.0).value)
-        self._confidence_min = float(self.declare_parameter("confidence_min", 0.8).value)
         self._anomaly_cooldown_s = float(self.declare_parameter("anomaly_cooldown_s", 30.0).value)
         # RFC-009 §9.3: configurable per-data_type anomaly thresholds (JSON string).
         thresholds_json = self.declare_parameter("anomaly_thresholds", "").value
         self._thresholds = parse_thresholds(thresholds_json or "")
 
-        medical_dir = self.declare_parameter("medical_corpus_dir", "").value
-        top_k = int(self.declare_parameter("rag_top_k", 3).value)
-        emb_base = self.declare_parameter("embedding_base_url", "").value
-        emb_key = self.declare_parameter("embedding_api_key", "").value
-        emb_model = self.declare_parameter("embedding_model", "").value
+        # RFC-009 AI 接入配置：ROS 参数 < 配置文件 < 环境变量（含 OpenAI 速记）
+        config_file = self.declare_parameter("config_file", "").value
+        ros_params = {
+            "llm_base_url": self.declare_parameter("llm_base_url", "").value,
+            "llm_api_key": self.declare_parameter("llm_api_key", "").value,
+            "llm_model": self.declare_parameter("llm_model", "gpt-4o-mini").value,
+            "embedding_base_url": self.declare_parameter("embedding_base_url", "").value,
+            "embedding_api_key": self.declare_parameter("embedding_api_key", "").value,
+            "embedding_model": self.declare_parameter("embedding_model", "").value,
+            "medical_corpus_dir": self.declare_parameter("medical_corpus_dir", "").value,
+            "confidence_min": self.declare_parameter("confidence_min", 0.8).value,
+            "rag_top_k": self.declare_parameter("rag_top_k", 3).value,
+        }
+        cfg = build_config(ros_params, config_file or "")
+
+        medical_dir = cfg["medical_corpus_dir"] or ""
+        top_k = int(cfg["rag_top_k"])
+        self._confidence_min = float(cfg["confidence_min"])
+
+        emb_base = cfg["embedding_base_url"] or ""
+        emb_key = cfg["embedding_api_key"] or ""
+        emb_model = cfg["embedding_model"] or ""
         embedding = EmbeddingClient(emb_base, emb_key, emb_model) if emb_base else None
         self._retriever = Retriever(
             corpus_dir=medical_dir or None, top_k=top_k, embedding=embedding)
 
-        llm_base = self.declare_parameter("llm_base_url", "").value
-        llm_key = self.declare_parameter("llm_api_key", "").value
-        llm_model = self.declare_parameter("llm_model", "gpt-4o-mini").value
-        self._llm = LLMClient(llm_base, llm_key, llm_model)
+        self._llm = LLMClient(
+            cfg["llm_base_url"] or "", cfg["llm_api_key"] or "", cfg["llm_model"] or "gpt-4o-mini")
 
         self._windows: Dict[str, Window] = {
             ds: Window(ds, _DATA_TYPE_BY_SRC.get(ds, ds), self._window_seconds)
