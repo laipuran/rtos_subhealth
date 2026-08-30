@@ -11,7 +11,7 @@ setup(
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
     ],
-    install_requires=["setuptools", "requests>=2.28", "numpy>=1.24"],
+    install_requires=["setuptools", "requests>=2.20"],
     zip_safe=True,
     maintainer="orchestration",
     maintainer_email="puranlai@qq.com",
