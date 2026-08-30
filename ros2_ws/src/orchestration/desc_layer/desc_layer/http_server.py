@@ -9,7 +9,13 @@ from typing import Any, Optional
 
 import flask
 from flask import Flask, Response, request
-from flask_sock import Sock
+
+try:
+    from flask_sock import Sock
+    _sock = Sock()
+    _has_ws = True
+except ImportError:
+    _has_ws = False
 
 from ros_interfaces.action import ExecTask
 
@@ -17,7 +23,8 @@ from .diagnosis_store import DiagnosisRecord, DiagnosisStore
 from .task_store import TaskRecord, TaskStore
 
 app = Flask(__name__)
-sock = Sock(app)
+if _has_ws:
+    _sock.init_app(app)
 
 task_store: TaskStore = None
 diagnosis_store: Optional[DiagnosisStore] = None
@@ -185,21 +192,18 @@ def _check_conflicts(old: dict, new: dict) -> Optional[dict]:
 
 def broadcast(goal_id: str, event_type: str, data: dict) -> None:
     payload = json.dumps({"goal_id": goal_id, "event": event_type, **data}, ensure_ascii=False)
-    with _ws_lock:
-        dead = []
-        for ws in ws_clients:
-            try:
-                ws.send(payload)
-            except Exception:
-                dead.append(ws)
-        for ws in dead:
-            ws_clients.remove(ws)
+    _push_ws(payload)
 
 
 def broadcast_diagnosis(payload: dict) -> None:
     """Broadcast a `diagnosis` WS event (RFC-009 §5.4)."""
     payload = dict(payload, event="diagnosis")
-    data = json.dumps(payload, ensure_ascii=False)
+    _push_ws(json.dumps(payload, ensure_ascii=False))
+
+
+def _push_ws(data: str) -> None:
+    if not _has_ws:
+        return
     with _ws_lock:
         dead = []
         for ws in ws_clients:
@@ -358,7 +362,6 @@ def put_map():
                             details=conflict["details"], tid=tid)
 
     _save_map(body, scene)
-    # Re-read to compute fresh etag
     _, etag = _load_map_etag(scene) or ("", "")
     return _ok_resp({"status": "saved", "scene": scene}, headers={"ETag": etag}, tid=tid)
 
@@ -374,9 +377,6 @@ def trigger_diagnosis():
         return auth_err
     if diagnosis_store is None or trigger_pub is None:
         return _api_err("INTERNAL", "diagnosis layer not available", 503, tid=tid)
-    # 发布手动触发到 /diagnosis/trigger，由 diagnosis_layer 执行。
-    # 把本次请求的 trace_id 透传为 "manual:<trace_id>"，使其成为 diagnosis_id，
-    # 从而贯穿到 WS 事件的 trace_id 字段（RFC-005 §5.3.4 / RFC-009 §5.4）。
     from std_msgs.msg import String as StringMsg
     trigger_pub.publish(StringMsg(data=f"manual:{tid}"))
     return _ok_resp({"status": "triggered", "trigger_type": "manual"}, 202, tid=tid)
@@ -422,27 +422,28 @@ def get_diagnosis(diagnosis_id: str):
     return _ok_resp(rec.to_dict(), tid=tid)
 
 
-# --- WebSocket Route ---
+# --- WebSocket Route (optional) ---
 
 
-@sock.route("/api/v1/events")
-def events(ws):
-    tid = uuid.uuid4().hex[:16]
-    if _api_token:
-        token = ws.receive(timeout=5)
-        if token != _api_token:
-            ws.send(json.dumps({"error": {"code": "UNAUTHORIZED", "message": "auth failed"}}))
-            return
-    with _ws_lock:
-        ws_clients.append(ws)
-    try:
-        while True:
-            msg = ws.receive(timeout=30)
-            if msg is None:
-                break
-    except Exception:
-        pass
-    finally:
+if _has_ws:
+    @_sock.route("/api/v1/events")
+    def events(ws):
+        tid = uuid.uuid4().hex[:16]
+        if _api_token:
+            token = ws.receive(timeout=5)
+            if token != _api_token:
+                ws.send(json.dumps({"error": {"code": "UNAUTHORIZED", "message": "auth failed"}}))
+                return
         with _ws_lock:
-            if ws in ws_clients:
-                ws_clients.remove(ws)
+            ws_clients.append(ws)
+        try:
+            while True:
+                msg = ws.receive(timeout=30)
+                if msg is None:
+                    break
+        except Exception:
+            pass
+        finally:
+            with _ws_lock:
+                if ws in ws_clients:
+                    ws_clients.remove(ws)
