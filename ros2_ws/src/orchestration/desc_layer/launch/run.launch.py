@@ -87,7 +87,7 @@ def _make_nodes(context, *args, **kwargs):
                 {"confidence_min": 0.8},
                 {"llm_base_url": ""},
                 {"llm_api_key": ""},
-                {"llm_model": "gpt-4o-mini"},
+                {"llm_model": ""},
                 {"embedding_base_url": ""},
             ],
             output="screen",
