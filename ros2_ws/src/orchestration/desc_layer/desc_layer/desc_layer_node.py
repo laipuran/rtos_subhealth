@@ -7,6 +7,7 @@ from typing import Optional
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
 from ros_interfaces.action import ExecTask
 from ros_interfaces.msg import DiagnosisResult
@@ -32,8 +33,10 @@ class DescLayerNode(Node):
         self._diagnosis_store = DiagnosisStore(db_dir=db_dir)
         self._goal_queue: queue.Queue[Optional[dict]] = queue.Queue()
         self._trigger_pub = self.create_publisher(String, "/diagnosis/trigger", 10)
+        qos = QoSProfile(reliability=ReliabilityPolicy.RELIABLE,
+                         history=HistoryPolicy.KEEP_LAST, depth=10)
         self._diagnosis_sub = self.create_subscription(
-            DiagnosisResult, "/diagnosis/results", self._on_diagnosis, 10)
+            DiagnosisResult, "/diagnosis/results", self._on_diagnosis, qos)
 
         # RFC-009 §9.4: diagnosis retention / cleanup policy.
         self._diagnosis_retention_s = float(
