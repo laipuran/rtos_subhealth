@@ -244,6 +244,7 @@ class DiagnosisLayerNode(Node):
         self._post_result_to_desc(result)
 
     def _post_result_to_desc(self, result: DiagnosisResult) -> None:
+        import os
         import urllib.request
         import urllib.error
         ts = result.timestamp.sec + result.timestamp.nanosec / 1e9
@@ -267,7 +268,10 @@ class DiagnosisLayerNode(Node):
             req = urllib.request.Request(
                 url, data=json_dumps(payload).encode(),
                 headers={"Content-Type": "application/json"})
-            resp = urllib.request.urlopen(req, timeout=5)
+            no_proxy = {"http": None, "https": None}
+            proxy_handler = urllib.request.ProxyHandler(no_proxy)
+            opener = urllib.request.build_opener(proxy_handler)
+            resp = opener.open(req, timeout=5)
             import sys
             sys.stderr.write(f"[DIAG] POST {url} -> {resp.status}\n")
             sys.stderr.flush()
