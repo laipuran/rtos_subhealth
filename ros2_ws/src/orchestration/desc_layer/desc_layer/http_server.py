@@ -424,13 +424,13 @@ def get_diagnosis(diagnosis_id: str):
 
 @app.route("/api/v1/internal/diagnosis-result", methods=["POST"])
 def receive_diagnosis_result():
-    import sys
-    sys.stderr.write("[INTERNAL] handler entered\n")
-    sys.stderr.flush()
+    if diagnosis_store is None:
+        import sys
+        sys.stderr.write("[INTERNAL] diagnosis_store is None\n")
+        sys.stderr.flush()
+        return _api_err("INTERNAL", "diagnosis store not initialized", 503)
     try:
         body = request.get_json(force=True, silent=True) or {}
-        sys.stderr.write(f"[INTERNAL] got body: {body}\n")
-        sys.stderr.flush()
         rec = DiagnosisRecord(
             diagnosis_id=body.get("diagnosis_id", ""),
             source_ids=body.get("source_ids", []),
@@ -445,17 +445,11 @@ def receive_diagnosis_result():
             error_code=body.get("error_code", ""),
             error_message=body.get("error_message", ""),
         )
-        sys.stderr.write(f"[INTERNAL] rec created: {rec.diagnosis_id}\n")
-        sys.stderr.flush()
         diagnosis_store.add(rec)
-        sys.stderr.write(f"[INTERNAL] added to store\n")
-        sys.stderr.flush()
         threading.Thread(target=broadcast_diagnosis, args=(rec.to_dict(),), daemon=True).start()
-        sys.stderr.write(f"[INTERNAL] broadcast started\n")
-        sys.stderr.flush()
         return _ok_resp({"status": "stored", "diagnosis_id": rec.diagnosis_id}, 201)
     except Exception as e:
-        import traceback
+        import traceback, sys
         traceback.print_exc(file=sys.stderr)
         sys.stderr.flush()
         return _api_err("INTERNAL", f"receive failed: {e}", 500)

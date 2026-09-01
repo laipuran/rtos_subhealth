@@ -172,10 +172,7 @@ class DiagnosisLayerNode(Node):
 
     def _run_job(self, trigger_type: str, source_ids: List[str], key: Tuple,
                  force_id: Optional[str] = None) -> None:
-        import sys
-        _e = lambda msg: (sys.stderr.write(f"[DIAG] {msg}\n"), sys.stderr.flush())
         try:
-            _e(f"job started: {key}")
             now = self.get_clock().now().nanoseconds / 1e9
             windows = {ds: self._windows[ds] for ds in source_ids if ds in self._windows}
             for w in windows.values():
@@ -189,11 +186,9 @@ class DiagnosisLayerNode(Node):
             if not anomaly_busy:
                 context = self._retriever.format_context(self._retriever.retrieve(snapshot))
 
-            _e(f"calling LLM, context_len={len(context)}")
             self._diagnose_and_publish(trigger_type, source_ids, snapshot, context, force_id)
-            _e(f"job done: {key}")
         except Exception as e:
-            _e(f"job FAILED: {key} error={e}")
+            self.get_logger().error(f"diagnosis job FAILED: {key} error={e}")
         finally:
             self._finish_job(key)
 
@@ -265,13 +260,10 @@ class DiagnosisLayerNode(Node):
         try:
             import requests
             resp = requests.post(url, json=payload, timeout=5, proxies={})
-            import sys
-            sys.stderr.write(f"[DIAG] POST {url} -> {resp.status_code}\n")
-            sys.stderr.flush()
+            if resp.status_code != 201:
+                self.get_logger().error(f"POST {url} -> {resp.status_code}: {resp.text[:200]}")
         except Exception as e:
-            import sys
-            sys.stderr.write(f"[DIAG] POST {url} FAILED: {e}\n")
-            sys.stderr.flush()
+            self.get_logger().error(f"POST {url} FAILED: {e}")
 
     def _fill_result(self, result: DiagnosisResult, obj: dict) -> None:
         result.severity = obj.get("severity", "normal")
