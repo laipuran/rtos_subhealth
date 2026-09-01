@@ -245,10 +245,8 @@ class DiagnosisLayerNode(Node):
         self._post_result_to_desc(result)
 
     def _post_result_to_desc(self, result: DiagnosisResult) -> None:
-        import urllib.request
-        import urllib.error
         ts = result.timestamp.sec + result.timestamp.nanosec / 1e9
-        payload = json.dumps({
+        payload = {
             "diagnosis_id": str(result.diagnosis_id),
             "source_ids": [str(s) for s in result.source_ids],
             "trigger_type": str(result.trigger_type),
@@ -262,15 +260,13 @@ class DiagnosisLayerNode(Node):
             "error_code": str(result.error_code),
             "error_message": str(result.error_message),
             "timestamp": ts,
-        }, ensure_ascii=False).encode("utf-8")
+        }
         url = f"{self._desc_http}/api/v1/internal/diagnosis-result"
         try:
-            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
-            no_proxy = {"http": None, "https": None}
-            opener = urllib.request.build_opener(urllib.request.ProxyHandler(no_proxy))
-            resp = opener.open(req, timeout=5)
+            import requests
+            resp = requests.post(url, json=payload, timeout=5, proxies={})
             import sys
-            sys.stderr.write(f"[DIAG] POST {url} -> {resp.status}\n")
+            sys.stderr.write(f"[DIAG] POST {url} -> {resp.status_code}\n")
             sys.stderr.flush()
         except Exception as e:
             import sys
