@@ -82,6 +82,9 @@ class DescLayerNode(Node):
         self.get_logger().info(f"HTTP server started on 0.0.0.0:{port}, maps_dir={maps_dir}")
 
     def _on_diagnosis(self, msg: DiagnosisResult) -> None:
+        import sys
+        sys.stderr.write(f"[DESC] _on_diagnosis called: id={msg.diagnosis_id}\n")
+        sys.stderr.flush()
         rec = DiagnosisRecord(
             diagnosis_id=msg.diagnosis_id,
             source_ids=list(msg.source_ids),

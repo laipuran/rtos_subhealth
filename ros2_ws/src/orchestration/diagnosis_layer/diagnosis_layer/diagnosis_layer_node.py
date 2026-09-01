@@ -228,14 +228,25 @@ class DiagnosisLayerNode(Node):
             if not passes_confidence(obj, self._confidence_min):
                 result.error_code = "LOW_CONFIDENCE"
                 result.error_message = f"confidence {obj.get('confidence')} < {self._confidence_min}"
+                import sys
+                sys.stderr.write(f"[DIAG] LOW_CONFIDENCE, publishing error\n")
+                sys.stderr.flush()
                 self._result_pub.publish(result)
                 return
             self._fill_result(result, obj)
+            import sys
+            sys.stderr.write(f"[DIAG] publishing result id={result.diagnosis_id} severity={result.severity}\n")
+            sys.stderr.flush()
             self._result_pub.publish(result)
+            sys.stderr.write(f"[DIAG] publish done\n")
+            sys.stderr.flush()
             return
 
         result.error_code = "LLM_PARSE_FAILED"
         result.error_message = last_err or "all attempts failed"
+        import sys
+        sys.stderr.write(f"[DIAG] LLM_PARSE_FAILED, publishing error: {last_err}\n")
+        sys.stderr.flush()
         self._result_pub.publish(result)
 
     def _fill_result(self, result: DiagnosisResult, obj: dict) -> None:
