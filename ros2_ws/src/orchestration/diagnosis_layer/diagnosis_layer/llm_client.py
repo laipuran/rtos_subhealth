@@ -28,12 +28,22 @@ class LLMClient:
         return bool(self._base_url)
 
     def complete(self, system: str, user: str) -> str:
+        import os
         import requests
 
         if not self.enabled:
             raise RuntimeError("LLM base_url not configured")
+        url = f"{self._base_url}/v1/chat/completions"
+        proxies = {}
+        http_proxy = os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")
+        https_proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+        if http_proxy:
+            proxies["http"] = http_proxy
+        if https_proxy:
+            proxies["https"] = https_proxy
+        logger.info("LLM request: %s model=%s proxy=%s", url, self._model, proxies)
         resp = requests.post(
-            f"{self._base_url}/v1/chat/completions",
+            url,
             headers={"Authorization": f"Bearer {self._api_key}"},
             json={
                 "model": self._model,
@@ -45,10 +55,11 @@ class LLMClient:
                 ],
             },
             timeout=self._timeout,
+            proxies=proxies,
         )
         if not resp.ok:
             logger.warning("LLM %s %s -> %s: %s", resp.status_code,
-                           self._base_url, resp.text[:500])
+                           url, resp.text[:500])
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"]
 
