@@ -46,6 +46,9 @@ class LLMClient:
             },
             timeout=self._timeout,
         )
+        if not resp.ok:
+            logger.warning("LLM %s %s -> %s: %s", resp.status_code,
+                           self._base_url, resp.text[:500])
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"]
 
@@ -102,6 +105,8 @@ def parse_diagnosis(content: str) -> Dict:
         obj["confidence"] = float(obj["confidence"])
     except (TypeError, ValueError):
         raise ValueError("confidence is not a number")
+    if not 0.0 <= obj["confidence"] <= 1.0:
+        raise ValueError(f"confidence {obj['confidence']} out of range [0, 1]")
     if not isinstance(obj.get("possible_causes"), list):
         obj["possible_causes"] = [str(obj.get("possible_causes", ""))]
     if not isinstance(obj.get("recommendations"), list):

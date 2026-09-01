@@ -98,7 +98,7 @@ class DescLayerNode(Node):
         )
         self._diagnosis_store.add(rec)
         ts = msg.timestamp.sec + msg.timestamp.nanosec / 1e9
-        broadcast_diagnosis({
+        payload = {
             "diagnosis_id": msg.diagnosis_id,
             "trigger_type": msg.trigger_type,
             "severity": msg.severity,
@@ -110,7 +110,8 @@ class DescLayerNode(Node):
             "trace_id": msg.diagnosis_id,
             "error_code": msg.error_code,
             "error_message": msg.error_message,
-        })
+        }
+        threading.Thread(target=broadcast_diagnosis, args=(payload,), daemon=True).start()
         self.get_logger().info(
             f"diagnosis {msg.diagnosis_id} stored (severity={msg.severity}, "
             f"error={msg.error_code or '-'})")

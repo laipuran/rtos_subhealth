@@ -46,28 +46,32 @@ def load_config_file(path: str) -> Dict[str, object]:
 
 
 def resolve(settings: Dict[str, object]) -> Dict[str, object]:
-    """Apply OpenAI shorthand: 只给 key 时自动补 base_url。"""
+    """Apply OpenAI shorthand: 只给 key 时自动补 base_url（不带 /v1）。"""
     out = dict(settings)
     if out.get("llm_api_key") and not out.get("llm_base_url"):
-        out["llm_base_url"] = "https://api.openai.com/v1"
+        out["llm_base_url"] = "https://api.openai.com"
     if out.get("embedding_api_key") and not out.get("embedding_base_url"):
-        out["embedding_base_url"] = "https://api.openai.com/v1"
+        out["embedding_base_url"] = "https://api.openai.com"
     return out
 
 
 def build_config(ros_params: Dict[str, object],
                  config_file: str = "") -> Dict[str, object]:
-    """Merge: DEFAULTS < JSON file < ROS params < environment variables.
+    """Merge: DEFAULTS < JSON file < ROS params; env vars fill gaps only.
 
-    返回最终生效的配置，节点据此构建 LLM / Embedding 客户端。
+    环境变量可覆盖 DEFAULTS，但不覆盖显式设置的 ROS 参数。
     """
     cfg: Dict[str, object] = dict(DEFAULTS)
     cfg.update(load_config_file(config_file))      # 配置文件
+    ros_set: set = set()                           # 记录哪些 key 被 ROS 参数显式设置
     for k, v in ros_params.items():               # ROS 参数优先于文件
         if v not in (None, ""):
             cfg[k] = v
-    for env_key, cfg_key in _ENV_MAP.items():      # 环境变量兜底
+            ros_set.add(k)
+    for env_key, cfg_key in _ENV_MAP.items():      # 环境变量兜底（不覆盖 ROS 参数）
+        if cfg_key in ros_set:
+            continue
         val = os.environ.get(env_key)
-        if val and str(cfg.get(cfg_key, "")) == "":
+        if val:
             cfg[cfg_key] = val
     return resolve(cfg)

@@ -20,17 +20,32 @@ export default function DiagnosisList({ refreshKey, onSelect, liveUpdates }: Pro
   const [loading, setLoading] = useState(true)
   const [triggering, setTriggering] = useState(false)
 
-  useEffect(() => {
-    setOffset(0)
-    setItems([])
-    listDiagnoses(0, PAGE_SIZE)
+  const fetchDiagnoses = (off: number) => {
+    listDiagnoses(off, PAGE_SIZE)
       .then((data) => {
         setItems(data.diagnoses)
         setTotal(data.total)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    setOffset(0)
+    setItems([])
+    setLoading(true)
+    fetchDiagnoses(0)
   }, [refreshKey])
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      listDiagnoses(0, PAGE_SIZE).then((data) => {
+        setItems(data.diagnoses)
+        setTotal(data.total)
+      }).catch(() => {})
+    }, 10000)
+    return () => clearInterval(timer)
+  }, [])
 
   const loadMore = async () => {
     const newOffset = offset + PAGE_SIZE

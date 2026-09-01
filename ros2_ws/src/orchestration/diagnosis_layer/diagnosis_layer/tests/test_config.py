@@ -45,7 +45,7 @@ def test_openai_shorthand():
     try:
         cfg = build_config({}, "")
         assert cfg["llm_api_key"] == "sk-test"
-        assert cfg["llm_base_url"] == "https://api.openai.com/v1"
+        assert cfg["llm_base_url"] == "https://api.openai.com"
     finally:
         _restoreenv(saved)
 

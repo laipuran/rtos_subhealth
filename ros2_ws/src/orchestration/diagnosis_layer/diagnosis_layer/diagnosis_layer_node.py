@@ -101,7 +101,9 @@ class DiagnosisLayerNode(Node):
         self._timer = self.create_timer(self._periodic_interval_s, self._on_periodic)
         self.get_logger().info(
             f"Diagnosis layer ready. RAG mode={self._retriever.mode}, "
-            f"LLM enabled={self._llm.enabled}, sources={list(data_sources)}")
+            f"LLM enabled={self._llm.enabled}, model={self._llm._model}, "
+            f"base_url={self._llm._base_url}, "
+            f"sources={list(data_sources)}")
 
     # --- sample ingestion + anomaly detection ---
 
