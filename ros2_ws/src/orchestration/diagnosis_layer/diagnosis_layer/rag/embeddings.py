@@ -13,7 +13,10 @@ class EmbeddingClient:
     """
 
     def __init__(self, base_url: str, api_key: str, model: str, timeout: float = 10.0) -> None:
+        # 去除尾部 / 和 /v1，避免客户端追加 /v1 后出现双重 /v1
         self._base_url = base_url.rstrip("/")
+        if self._base_url.endswith("/v1"):
+            self._base_url = self._base_url[:-3]
         self._api_key = api_key
         self._model = model
         self._timeout = timeout

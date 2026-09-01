@@ -23,7 +23,7 @@ setup(
     version="0.1.0",
     packages=find_packages(exclude=["test"]),
     data_files=data_files,
-    install_requires=["setuptools", "flask>=1.0"],
+    install_requires=["setuptools", "flask>=1.0", "flask-sock"],
     zip_safe=True,
     maintainer="orchestration",
     maintainer_email="puranlai@qq.com",

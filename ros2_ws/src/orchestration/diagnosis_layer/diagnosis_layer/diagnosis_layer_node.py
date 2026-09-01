@@ -198,6 +198,13 @@ class DiagnosisLayerNode(Node):
         result.trigger_type = trigger_type
         result.raw_prompt = raw_prompt
         result.timestamp = self.get_clock().now().to_msg()
+        # 设置默认值，确保下游假设不会被破坏
+        result.severity = "normal"
+        result.summary = ""
+        result.possible_causes = []
+        result.recommendations = []
+        result.confidence = 0.0
+        result.disclaimer = ""
 
         if not self._llm.enabled:
             result.error_code = "LLM_DISABLED"

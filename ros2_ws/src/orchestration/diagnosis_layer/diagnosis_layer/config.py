@@ -18,7 +18,7 @@ DEFAULTS: Dict[str, object] = {
     "rag_top_k": 3,
 }
 
-# 环境变量名 -> 配置键 的映射（env 优先级低于 ROS 参数 / 配置文件）
+# 环境变量名 -> 配置键 的映射（env 优先级低于 ROS 参数，高于配置文件）
 _ENV_MAP = {
     "LLM_BASE_URL": "llm_base_url",
     "LLM_API_KEY": "llm_api_key",
@@ -46,19 +46,20 @@ def load_config_file(path: str) -> Dict[str, object]:
 
 
 def resolve(settings: Dict[str, object]) -> Dict[str, object]:
-    """Apply OpenAI shorthand: 只给 key 时自动补 base_url。"""
+    """Apply OpenAI shorthand: 只给 key 时自动补 base_url（不含 /v1，客户端会自动追加）。"""
     out = dict(settings)
     if out.get("llm_api_key") and not out.get("llm_base_url"):
-        out["llm_base_url"] = "https://api.openai.com/v1"
+        out["llm_base_url"] = "https://api.openai.com"
     if out.get("embedding_api_key") and not out.get("embedding_base_url"):
-        out["embedding_base_url"] = "https://api.openai.com/v1"
+        out["embedding_base_url"] = "https://api.openai.com"
     return out
 
 
 def build_config(ros_params: Dict[str, object],
                  config_file: str = "") -> Dict[str, object]:
-    """Merge: DEFAULTS < JSON file < ROS params < environment variables.
+    """Merge: DEFAULTS < JSON file < environment variables < ROS params.
 
+    优先级: DEFAULTS < 配置文件 < 环境变量 < ROS 参数（ROS 参数最高）
     返回最终生效的配置，节点据此构建 LLM / Embedding 客户端。
     """
     cfg: Dict[str, object] = dict(DEFAULTS)

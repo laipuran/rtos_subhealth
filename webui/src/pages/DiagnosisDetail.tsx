@@ -22,7 +22,7 @@ export default function DiagnosisDetail({ diagnosisId, onBack, liveUpdates }: Pr
       .finally(() => setLoading(false))
   }, [diagnosisId])
 
-  const merged = diagnosisId && liveUpdates[diagnosisId]
+  const merged = diagnosisId && liveUpdates[diagnosisId] && rec
     ? { ...rec, ...liveUpdates[diagnosisId] }
     : rec
 

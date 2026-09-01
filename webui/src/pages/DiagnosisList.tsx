@@ -23,6 +23,7 @@ export default function DiagnosisList({ refreshKey, onSelect, liveUpdates }: Pro
   useEffect(() => {
     setOffset(0)
     setItems([])
+    setLoading(true)
     listDiagnoses(0, PAGE_SIZE)
       .then((data) => {
         setItems(data.diagnoses)

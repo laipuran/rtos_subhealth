@@ -45,7 +45,8 @@ def test_openai_shorthand():
     try:
         cfg = build_config({}, "")
         assert cfg["llm_api_key"] == "sk-test"
-        assert cfg["llm_base_url"] == "https://api.openai.com/v1"
+        # config.resolve() 填充不带 /v1 的 URL，客户端会自动追加
+        assert cfg["llm_base_url"] == "https://api.openai.com"
     finally:
         _restoreenv(saved)
 

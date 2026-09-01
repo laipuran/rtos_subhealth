@@ -74,7 +74,10 @@ class Retriever:
             return []
         query = self.build_query(snapshot)
         if self._embeddings is not None:
-            return self._retrieve_embeddings(query)
+            try:
+                return self._retrieve_embeddings(query)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Embedding query failed, falling back to keyword: %s", exc)
         return self._retrieve_keyword(query, snapshot)
 
     @staticmethod
