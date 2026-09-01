@@ -170,8 +170,10 @@ class DiagnosisLayerNode(Node):
 
     def _run_job(self, trigger_type: str, source_ids: List[str], key: Tuple,
                  force_id: Optional[str] = None) -> None:
+        import sys
+        _e = lambda msg: (sys.stderr.write(f"[DIAG] {msg}\n"), sys.stderr.flush())
         try:
-            print(f"[DIAG] job started: {key}", flush=True)
+            _e(f"job started: {key}")
             now = self.get_clock().now().nanoseconds / 1e9
             windows = {ds: self._windows[ds] for ds in source_ids if ds in self._windows}
             for w in windows.values():
@@ -185,11 +187,11 @@ class DiagnosisLayerNode(Node):
             if not anomaly_busy:
                 context = self._retriever.format_context(self._retriever.retrieve(snapshot))
 
-            print(f"[DIAG] calling LLM, context_len={len(context)}", flush=True)
+            _e(f"calling LLM, context_len={len(context)}")
             self._diagnose_and_publish(trigger_type, source_ids, snapshot, context, force_id)
-            print(f"[DIAG] job done: {key}", flush=True)
+            _e(f"job done: {key}")
         except Exception as e:
-            print(f"[DIAG] job FAILED: {key} error={e}", flush=True)
+            _e(f"job FAILED: {key} error={e}")
         finally:
             self._finish_job(key)
 
