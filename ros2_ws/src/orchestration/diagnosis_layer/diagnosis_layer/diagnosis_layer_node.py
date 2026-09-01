@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 import uuid
 from typing import Dict, List, Optional, Set, Tuple
@@ -244,33 +245,29 @@ class DiagnosisLayerNode(Node):
         self._post_result_to_desc(result)
 
     def _post_result_to_desc(self, result: DiagnosisResult) -> None:
-        import os
         import urllib.request
         import urllib.error
         ts = result.timestamp.sec + result.timestamp.nanosec / 1e9
-        payload = {
-            "diagnosis_id": result.diagnosis_id,
-            "source_ids": list(result.source_ids),
-            "trigger_type": result.trigger_type,
-            "severity": result.severity,
-            "summary": result.summary,
-            "possible_causes": list(result.possible_causes),
-            "recommendations": list(result.recommendations),
+        payload = json.dumps({
+            "diagnosis_id": str(result.diagnosis_id),
+            "source_ids": [str(s) for s in result.source_ids],
+            "trigger_type": str(result.trigger_type),
+            "severity": str(result.severity),
+            "summary": str(result.summary),
+            "possible_causes": [str(s) for s in result.possible_causes],
+            "recommendations": [str(s) for s in result.recommendations],
             "confidence": float(result.confidence),
-            "disclaimer": result.disclaimer,
-            "raw_prompt": result.raw_prompt,
-            "error_code": result.error_code,
-            "error_message": result.error_message,
+            "disclaimer": str(result.disclaimer),
+            "raw_prompt": str(result.raw_prompt),
+            "error_code": str(result.error_code),
+            "error_message": str(result.error_message),
             "timestamp": ts,
-        }
+        }, ensure_ascii=False).encode("utf-8")
         url = f"{self._desc_http}/api/v1/internal/diagnosis-result"
         try:
-            req = urllib.request.Request(
-                url, data=json_dumps(payload).encode(),
-                headers={"Content-Type": "application/json"})
+            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
             no_proxy = {"http": None, "https": None}
-            proxy_handler = urllib.request.ProxyHandler(no_proxy)
-            opener = urllib.request.build_opener(proxy_handler)
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler(no_proxy))
             resp = opener.open(req, timeout=5)
             import sys
             sys.stderr.write(f"[DIAG] POST {url} -> {resp.status}\n")
