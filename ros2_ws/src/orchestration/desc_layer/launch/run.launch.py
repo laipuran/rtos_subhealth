@@ -89,6 +89,7 @@ def _make_nodes(context, *args, **kwargs):
                 {"llm_api_key": ""},
                 {"llm_model": ""},
                 {"embedding_base_url": ""},
+                {"desc_http_url": "http://127.0.0.1:5000"},
             ],
             output="screen",
         ),

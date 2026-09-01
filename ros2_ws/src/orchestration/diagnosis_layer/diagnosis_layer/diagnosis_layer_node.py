@@ -97,6 +97,7 @@ class DiagnosisLayerNode(Node):
                 lambda msg, ds=ds: self._on_sample(ds, msg), qos)
         self.create_subscription(String, "/diagnosis/trigger", self._on_manual_trigger, qos)
         self._result_pub = self.create_publisher(DiagnosisResult, "/diagnosis/results", qos)
+        self._desc_http = self.declare_parameter("desc_http_url", "http://127.0.0.1:5000").value
 
         self._timer = self.create_timer(self._periodic_interval_s, self._on_periodic)
         self.get_logger().info(
@@ -212,7 +213,7 @@ class DiagnosisLayerNode(Node):
             result.error_code = "LLM_DISABLED"
             result.error_message = "LLM not configured; RAG context prepared"
             result.summary = context[:500]
-            self._result_pub.publish(result)
+            self._publish_and_post(result)
             return
 
         content = None
@@ -228,26 +229,52 @@ class DiagnosisLayerNode(Node):
             if not passes_confidence(obj, self._confidence_min):
                 result.error_code = "LOW_CONFIDENCE"
                 result.error_message = f"confidence {obj.get('confidence')} < {self._confidence_min}"
-                import sys
-                sys.stderr.write(f"[DIAG] LOW_CONFIDENCE, publishing error\n")
-                sys.stderr.flush()
-                self._result_pub.publish(result)
+                self._publish_and_post(result)
                 return
             self._fill_result(result, obj)
-            import sys
-            sys.stderr.write(f"[DIAG] publishing result id={result.diagnosis_id} severity={result.severity}\n")
-            sys.stderr.flush()
-            self._result_pub.publish(result)
-            sys.stderr.write(f"[DIAG] publish done\n")
-            sys.stderr.flush()
+            self._publish_and_post(result)
             return
 
         result.error_code = "LLM_PARSE_FAILED"
         result.error_message = last_err or "all attempts failed"
-        import sys
-        sys.stderr.write(f"[DIAG] LLM_PARSE_FAILED, publishing error: {last_err}\n")
-        sys.stderr.flush()
+        self._publish_and_post(result)
+
+    def _publish_and_post(self, result: DiagnosisResult) -> None:
         self._result_pub.publish(result)
+        self._post_result_to_desc(result)
+
+    def _post_result_to_desc(self, result: DiagnosisResult) -> None:
+        import urllib.request
+        import urllib.error
+        ts = result.timestamp.sec + result.timestamp.nanosec / 1e9
+        payload = {
+            "diagnosis_id": result.diagnosis_id,
+            "source_ids": list(result.source_ids),
+            "trigger_type": result.trigger_type,
+            "severity": result.severity,
+            "summary": result.summary,
+            "possible_causes": list(result.possible_causes),
+            "recommendations": list(result.recommendations),
+            "confidence": float(result.confidence),
+            "disclaimer": result.disclaimer,
+            "raw_prompt": result.raw_prompt,
+            "error_code": result.error_code,
+            "error_message": result.error_message,
+            "timestamp": ts,
+        }
+        url = f"{self._desc_http}/api/v1/internal/diagnosis-result"
+        try:
+            req = urllib.request.Request(
+                url, data=json_dumps(payload).encode(),
+                headers={"Content-Type": "application/json"})
+            resp = urllib.request.urlopen(req, timeout=5)
+            import sys
+            sys.stderr.write(f"[DIAG] POST {url} -> {resp.status}\n")
+            sys.stderr.flush()
+        except Exception as e:
+            import sys
+            sys.stderr.write(f"[DIAG] POST {url} FAILED: {e}\n")
+            sys.stderr.flush()
 
     def _fill_result(self, result: DiagnosisResult, obj: dict) -> None:
         result.severity = obj.get("severity", "normal")

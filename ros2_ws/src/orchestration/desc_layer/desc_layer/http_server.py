@@ -422,6 +422,28 @@ def get_diagnosis(diagnosis_id: str):
     return _ok_resp(rec.to_dict(), tid=tid)
 
 
+@app.route("/api/v1/internal/diagnosis-result", methods=["POST"])
+def receive_diagnosis_result():
+    body = request.get_json(force=True, silent=True) or {}
+    rec = DiagnosisRecord(
+        diagnosis_id=body.get("diagnosis_id", ""),
+        source_ids=body.get("source_ids", []),
+        trigger_type=body.get("trigger_type", ""),
+        severity=body.get("severity", "normal"),
+        summary=body.get("summary", ""),
+        possible_causes=body.get("possible_causes", []),
+        recommendations=body.get("recommendations", []),
+        confidence=float(body.get("confidence", 0.0)),
+        disclaimer=body.get("disclaimer", ""),
+        raw_prompt=body.get("raw_prompt", ""),
+        error_code=body.get("error_code", ""),
+        error_message=body.get("error_message", ""),
+    )
+    diagnosis_store.add(rec)
+    threading.Thread(target=broadcast_diagnosis, args=(rec.to_dict(),), daemon=True).start()
+    return _ok_resp({"status": "stored", "diagnosis_id": rec.diagnosis_id}, 201)
+
+
 # --- WebSocket Route (optional) ---
 
 
