@@ -55,7 +55,7 @@ class DiagnosisLayerNode(Node):
         ros_params = {
             "llm_base_url": self.declare_parameter("llm_base_url", "").value,
             "llm_api_key": self.declare_parameter("llm_api_key", "").value,
-            "llm_model": self.declare_parameter("llm_model", "gpt-4o-mini").value,
+            "llm_model": self.declare_parameter("llm_model", "").value,
             "embedding_base_url": self.declare_parameter("embedding_base_url", "").value,
             "embedding_api_key": self.declare_parameter("embedding_api_key", "").value,
             "embedding_model": self.declare_parameter("embedding_model", "").value,
