@@ -171,6 +171,7 @@ class DiagnosisLayerNode(Node):
     def _run_job(self, trigger_type: str, source_ids: List[str], key: Tuple,
                  force_id: Optional[str] = None) -> None:
         try:
+            print(f"[DIAG] job started: {key}", flush=True)
             now = self.get_clock().now().nanoseconds / 1e9
             windows = {ds: self._windows[ds] for ds in source_ids if ds in self._windows}
             for w in windows.values():
@@ -184,7 +185,11 @@ class DiagnosisLayerNode(Node):
             if not anomaly_busy:
                 context = self._retriever.format_context(self._retriever.retrieve(snapshot))
 
+            print(f"[DIAG] calling LLM, context_len={len(context)}", flush=True)
             self._diagnose_and_publish(trigger_type, source_ids, snapshot, context, force_id)
+            print(f"[DIAG] job done: {key}", flush=True)
+        except Exception as e:
+            print(f"[DIAG] job FAILED: {key} error={e}", flush=True)
         finally:
             self._finish_job(key)
 

@@ -42,6 +42,7 @@ class LLMClient:
         if https_proxy:
             proxies["https"] = https_proxy
         logger.info("LLM request: %s model=%s proxy=%s", url, self._model, proxies)
+        print(f"[LLM] POST {url} model={self._model} proxy={proxies}", flush=True)
         resp = requests.post(
             url,
             headers={"Authorization": f"Bearer {self._api_key}"},
