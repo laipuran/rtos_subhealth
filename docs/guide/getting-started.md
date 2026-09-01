@@ -1,5 +1,7 @@
 # 操作手册
 
+> Arch / 无法直接安装 ROS2 Foxy 时，可用 Docker 方案，见 [附录：Arch + Docker 编译](#附录arch--docker-编译)。
+
 ## 1. 环境要求
 
 | 组件 | 版本 |
@@ -362,3 +364,48 @@ ls -la .husky/commit-msg
 # 手动触发校验
 npx --no -- commitlint --edit .git/COMMIT_EDITMSG
 ```
+
+## 附录: Arch + Docker 编译
+
+在 Arch / 无法直接安装 ROS2 Foxy（官方仅支持 Ubuntu 20.04）的环境下，可用 Docker
+方式：镜像**一次性**构建，源码/接口改动后只需在容器内 `colcon` 增量编译，无需重建镜像。
+
+### A. 安装 Docker
+
+```bash
+# Arch
+sudo pacman -S docker
+sudo systemctl enable --now docker
+# 若无需 root，把当前用户加入 docker 组后重新登录
+sudo usermod -aG docker "$USER"
+```
+
+### B. 构建镜像（仅需一次，或当 Dockerfile 依赖变化时）
+
+```bash
+cd ros2_ws/docker
+docker compose build
+```
+
+### C. 进入容器（一次性，挂载 ros2_ws → /workspace）
+
+```bash
+cd ros2_ws
+./docker/dev.sh        # 弹出一次性容器的交互 bash，退出即删（--rm）
+```
+
+容器内操作统一用 `make`（见挂载的 `/workspace/Makefile`）：
+
+```bash
+make build                          # 编译 (colcon build --symlink-install)
+make run                            # 运行后端，默认 mock
+make run backend=sim                # 运行 sim（提示需挂载 unitree，暂未容器化仅 mock 可用）
+make run backend=real               # 运行 real（同上）
+make clean                          # 清理 build/ install/ log/
+```
+
+- 容器使用 **host 网络**（DDS 绑定 `lo`、desc_layer 端口 5000 直接可达），与 `setup.sh` 一致。
+- `build/`、`install/`、`log/` 产物留在宿主（已在 `.gitignore`），可跨容器增量编译、便于查看。
+- 容器内 `USER=rosdev (uid 1000)`，对应主流桌面主机当前用户；若宿主 UID 非 1000，
+  可在 `docker/docker-compose.yml` 中调整 `user:` 与卷属主。
+- `sim` / `real` 后端**尚未**容器化（需 Unitree SDK + MuJoCo + X11 显示），目前请用 `make run`（mock）验证 WebUI 链路。
