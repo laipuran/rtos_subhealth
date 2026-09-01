@@ -147,7 +147,7 @@ def _tokenize(text: str) -> List[str]:
 def _default_corpus_dir() -> str:
     env = os.environ.get("MEDICAL_CORPUS_DIR")
     if env:
-        return env
+        return env  # Fallback: when build_config() passes corpus_dir=None
     here = os.path.dirname(os.path.abspath(__file__))
     repo_root = _find_repo_root(here)
     return os.path.normpath(os.path.join(repo_root, "docs", "medical"))
