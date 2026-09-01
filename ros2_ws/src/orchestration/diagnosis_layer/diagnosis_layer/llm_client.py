@@ -17,6 +17,8 @@ class LLMClient:
     def __init__(self, base_url: str = "", api_key: str = "", model: str = "gpt-4o-mini",
                  timeout: float = 30.0) -> None:
         self._base_url = (base_url or "").rstrip("/")
+        if self._base_url.endswith("/v1"):
+            self._base_url = self._base_url[:-3]
         self._api_key = api_key
         self._model = model
         self._timeout = timeout
