@@ -64,11 +64,11 @@ def build_config(ros_params: Dict[str, object],
     """
     cfg: Dict[str, object] = dict(DEFAULTS)
     cfg.update(load_config_file(config_file))      # 配置文件
-    for k, v in ros_params.items():               # ROS 参数优先于文件
+    for env_key, cfg_key in _ENV_MAP.items():      # 环境变量覆盖配置文件
+        val = os.environ.get(env_key)
+        if val:
+            cfg[cfg_key] = val
+    for k, v in ros_params.items():               # ROS 参数最高优先级
         if v not in (None, ""):
             cfg[k] = v
-    for env_key, cfg_key in _ENV_MAP.items():      # 环境变量兜底
-        val = os.environ.get(env_key)
-        if val and str(cfg.get(cfg_key, "")) == "":
-            cfg[cfg_key] = val
     return resolve(cfg)

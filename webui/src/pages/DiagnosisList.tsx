@@ -29,15 +29,21 @@ export default function DiagnosisList({ refreshKey, onSelect, liveUpdates }: Pro
         setItems(data.diagnoses)
         setTotal(data.total)
       })
-      .catch(() => {})
+      .catch((err: any) => {
+        toast(err?.message || "Failed to load diagnoses", "error")
+      })
       .finally(() => setLoading(false))
   }, [refreshKey])
 
   const loadMore = async () => {
     const newOffset = offset + PAGE_SIZE
-    const data = await listDiagnoses(newOffset, PAGE_SIZE)
-    setItems((prev) => [...prev, ...data.diagnoses])
-    setOffset(newOffset)
+    try {
+      const data = await listDiagnoses(newOffset, PAGE_SIZE)
+      setItems((prev) => [...prev, ...data.diagnoses])
+      setOffset(newOffset)
+    } catch (err: any) {
+      toast(err?.message || "Failed to load more", "error")
+    }
   }
 
   const merged = items.map((d) => {

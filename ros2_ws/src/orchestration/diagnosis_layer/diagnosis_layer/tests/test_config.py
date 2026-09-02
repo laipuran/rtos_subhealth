@@ -70,3 +70,19 @@ def test_config_file_loaded():
         assert cfg["llm_model"] == "llama3"
     finally:
         os.unlink(path)
+
+
+def test_env_overrides_config_file():
+    saved = _setenv({"LLM_BASE_URL": "http://env/v1"})
+    try:
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
+            f.write('{"llm_base_url": "http://file/v1"}')
+            path = f.name
+        try:
+            cfg = build_config({}, path)
+            # 环境变量应覆盖配置文件
+            assert cfg["llm_base_url"] == "http://env/v1"
+        finally:
+            os.unlink(path)
+    finally:
+        _restoreenv(saved)
