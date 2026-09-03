@@ -23,7 +23,10 @@ class PhysioMockPublisher(Node):
     def __init__(self) -> None:
         super().__init__("physio_mock_publisher")
         self._scenario = self.declare_parameter("scenario", "normal").value
-        self._rate_hz = self.declare_parameter("rate_hz", 1.0).value
+        self._rate_hz = float(self.declare_parameter("rate_hz", 1.0).value)
+        if self._rate_hz <= 0:
+            self.get_logger().warning(f"rate_hz must be > 0, got {self._rate_hz}; defaulting to 1.0")
+            self._rate_hz = 1.0
 
         qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
