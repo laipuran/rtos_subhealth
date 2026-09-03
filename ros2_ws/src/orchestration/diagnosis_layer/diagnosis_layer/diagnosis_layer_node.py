@@ -76,11 +76,13 @@ class DiagnosisLayerNode(Node):
         self._retriever = Retriever(
             corpus_dir=medical_dir or None, top_k=top_k, embedding=embedding)
 
-        if not cfg["llm_base_url"]:
-            self.get_logger().fatal("LLM_BASE_URL 未配置，节点无法启动")
-            raise RuntimeError("LLM_BASE_URL is required but not configured")
         self._llm = LLMClient(
-            cfg["llm_base_url"], cfg["llm_api_key"] or "", cfg["llm_model"] or "gpt-4o-mini")
+            cfg["llm_base_url"] or "",
+            cfg["llm_api_key"] or "",
+            cfg["llm_model"] or "gpt-4o-mini",
+        )
+        if not self._llm.enabled:
+            self.get_logger().warning("LLM_BASE_URL not configured; running in LLM_DISABLED mode")
 
         self._windows: Dict[str, Window] = {
             ds: Window(ds, _DATA_TYPE_BY_SRC.get(ds, ds), self._window_seconds)
