@@ -149,3 +149,6 @@ vite.config.ts.timestamp-*
 /build/
 /install/
 /log/
+
+# Database files
+*.db

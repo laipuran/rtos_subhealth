@@ -22,6 +22,18 @@ if [[ "$BACKEND" != "mock" && "$BACKEND" != "sim" && "$BACKEND" != "real" ]]; th
     exit 1
 fi
 
+# 加载 AI 接入配置（LLM_*/EMBEDDING_* 等，见 .env.example）。
+# .env 已被 .gitignore 忽略，不会进入版本库。
+# 必须在 setup.sh 之前加载，否则 ROS2 环境脚本可能覆盖变量。
+if [ -f "$SCRIPT_DIR/.env" ]; then
+  set -a
+  . "$SCRIPT_DIR/.env"
+  set +a
+  echo "[OK] .env loaded: LLM_BASE_URL=$LLM_BASE_URL LLM_MODEL=$LLM_MODEL"
+else
+  echo "[WARN] .env not found at $SCRIPT_DIR/.env — LLM disabled"
+fi
+
 # 环境 + DDS
 source setup.sh
 

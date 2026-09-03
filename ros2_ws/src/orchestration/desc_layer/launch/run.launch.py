@@ -67,6 +67,32 @@ def _make_nodes(context, *args, **kwargs):
             output="screen",
         ),
     ]
+
+    # RFC-009 生理传感 + 诊断层
+    nodes += [
+        Node(
+            package="physio_mock_publisher",
+            executable="physio_mock_publisher_node",
+            name="physio_mock_publisher",
+            parameters=[{"scenario": "normal"}],
+            output="screen",
+        ),
+        Node(
+            package="diagnosis_layer",
+            executable="diagnosis_layer_node",
+            name="diagnosis_layer",
+            parameters=[
+                {"medical_corpus_dir": ""},
+                {"rag_top_k": 3},
+                {"confidence_min": 0.8},
+                {"llm_base_url": ""},
+                {"llm_api_key": ""},
+                {"llm_model": ""},
+                {"embedding_base_url": ""},
+            ],
+            output="screen",
+        ),
+    ]
     return nodes
 
 

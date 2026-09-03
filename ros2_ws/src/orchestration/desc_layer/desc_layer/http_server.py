@@ -9,17 +9,27 @@ from typing import Any, Optional
 
 import flask
 from flask import Flask, Response, request
-from flask_sock import Sock
+
+try:
+    from flask_sock import Sock
+    _sock = Sock()
+    _has_ws = True
+except ImportError:
+    _has_ws = False
 
 from ros_interfaces.action import ExecTask
 
+from .diagnosis_store import DiagnosisRecord, DiagnosisStore
 from .task_store import TaskRecord, TaskStore
 
 app = Flask(__name__)
-sock = Sock(app)
+if _has_ws:
+    _sock.init_app(app)
 
 task_store: TaskStore = None
+diagnosis_store: Optional[DiagnosisStore] = None
 goal_queue: "queue.Queue[Optional[dict]]" = None
+trigger_pub = None
 maps_path: str = ""
 ws_clients: list = []
 _ws_lock = threading.Lock()
@@ -27,12 +37,16 @@ _api_token: str = ""
 
 
 def init_app(store: TaskStore, queue: "queue.Queue[Optional[dict]]",
-             maps_dir: str = "", api_token: str = "") -> None:
+              maps_dir: str = "", api_token: str = "",
+              diagnosis_store: Optional[DiagnosisStore] = None,
+              trigger_pub=None) -> None:
     global task_store, goal_queue, maps_path, _api_token
     task_store = store
     goal_queue = queue
     maps_path = maps_dir
     _api_token = api_token
+    globals()["diagnosis_store"] = diagnosis_store
+    globals()["trigger_pub"] = trigger_pub
 
 
 def _trace_id() -> str:
@@ -178,11 +192,23 @@ def _check_conflicts(old: dict, new: dict) -> Optional[dict]:
 
 def broadcast(goal_id: str, event_type: str, data: dict) -> None:
     payload = json.dumps({"goal_id": goal_id, "event": event_type, **data}, ensure_ascii=False)
+    _push_ws(payload)
+
+
+def broadcast_diagnosis(payload: dict) -> None:
+    """Broadcast a `diagnosis` WS event (RFC-009 §5.4)."""
+    payload = dict(payload, event="diagnosis")
+    _push_ws(json.dumps(payload, ensure_ascii=False))
+
+
+def _push_ws(data: str) -> None:
+    if not _has_ws:
+        return
     with _ws_lock:
         dead = []
         for ws in ws_clients:
             try:
-                ws.send(payload)
+                ws.send(data)
             except Exception:
                 dead.append(ws)
         for ws in dead:
@@ -336,32 +362,88 @@ def put_map():
                             details=conflict["details"], tid=tid)
 
     _save_map(body, scene)
-    # Re-read to compute fresh etag
     _, etag = _load_map_etag(scene) or ("", "")
     return _ok_resp({"status": "saved", "scene": scene}, headers={"ETag": etag}, tid=tid)
 
 
-# --- WebSocket Route ---
+# --- Diagnostics Routes (RFC-009) ---
 
 
-@sock.route("/api/v1/events")
-def events(ws):
-    tid = uuid.uuid4().hex[:16]
-    if _api_token:
-        token = ws.receive(timeout=5)
-        if token != _api_token:
-            ws.send(json.dumps({"error": {"code": "UNAUTHORIZED", "message": "auth failed"}}))
-            return
-    with _ws_lock:
-        ws_clients.append(ws)
+@app.route("/api/v1/diagnostics", methods=["POST"])
+def trigger_diagnosis():
+    tid = request.trace_id
+    auth_err = _check_auth(tid)
+    if auth_err:
+        return auth_err
+    if diagnosis_store is None or trigger_pub is None:
+        return _api_err("INTERNAL", "diagnosis layer not available", 503, tid=tid)
+    from std_msgs.msg import String as StringMsg
+    trigger_pub.publish(StringMsg(data=f"manual:{tid}"))
+    return _ok_resp({"status": "triggered", "trigger_type": "manual"}, 202, tid=tid)
+
+
+@app.route("/api/v1/diagnostics", methods=["GET"])
+def list_diagnoses():
+    tid = request.trace_id
+    auth_err = _check_auth(tid)
+    if auth_err:
+        return auth_err
+    if diagnosis_store is None:
+        return _api_err("INTERNAL", "diagnosis store not available", 503, tid=tid)
     try:
-        while True:
-            msg = ws.receive(timeout=30)
-            if msg is None:
-                break
-    except Exception:
-        pass
-    finally:
+        offset = max(0, int(request.args.get("offset", "0")))
+        limit = max(1, min(200, int(request.args.get("limit", "50"))))
+    except ValueError:
+        return _api_err("INVALID_PARAM", "offset and limit must be integers", 400, tid=tid)
+    records = diagnosis_store.list_all(offset=offset, limit=limit)
+    total = diagnosis_store.count()
+    return _ok_resp(
+        {
+            "diagnoses": [r.to_dict() for r in records],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        },
+        tid=tid,
+    )
+
+
+@app.route("/api/v1/diagnostics/<diagnosis_id>", methods=["GET"])
+def get_diagnosis(diagnosis_id: str):
+    tid = request.trace_id
+    auth_err = _check_auth(tid)
+    if auth_err:
+        return auth_err
+    if diagnosis_store is None:
+        return _api_err("INTERNAL", "diagnosis store not available", 503, tid=tid)
+    rec = diagnosis_store.get(diagnosis_id)
+    if rec is None:
+        return _api_err("NOT_FOUND", f"diagnosis {diagnosis_id} not found", 404, tid=tid)
+    return _ok_resp(rec.to_dict(), tid=tid)
+
+
+# --- WebSocket Route (optional) ---
+
+
+if _has_ws:
+    @_sock.route("/api/v1/events")
+    def events(ws):
+        tid = uuid.uuid4().hex[:16]
+        if _api_token:
+            token = ws.receive(timeout=5)
+            if token != _api_token:
+                ws.send(json.dumps({"error": {"code": "UNAUTHORIZED", "message": "auth failed"}}))
+                return
         with _ws_lock:
-            if ws in ws_clients:
-                ws_clients.remove(ws)
+            ws_clients.append(ws)
+        try:
+            while True:
+                msg = ws.receive(timeout=30)
+                if msg is None:
+                    break
+        except Exception:
+            pass
+        finally:
+            with _ws_lock:
+                if ws in ws_clients:
+                    ws_clients.remove(ws)

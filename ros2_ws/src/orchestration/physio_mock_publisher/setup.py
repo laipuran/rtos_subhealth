@@ -1,7 +1,7 @@
 from setuptools import find_packages, setup
 import os
 
-package_name = "desc_layer"
+package_name = "physio_mock_publisher"
 pkg_dir = os.path.dirname(os.path.abspath(__file__))
 
 launch_dir = os.path.join(pkg_dir, "launch")
@@ -14,25 +14,22 @@ data_files = [
     (f"share/{package_name}", ["package.xml"]),
 ]
 if launch_files:
-    data_files.append(
-        (os.path.join("share", package_name, "launch"), launch_files)
-    )
+    data_files.append((f"share/{package_name}/launch", launch_files))
 
 setup(
     name=package_name,
     version="0.1.0",
     packages=find_packages(exclude=["test"]),
     data_files=data_files,
-    install_requires=["setuptools", "flask>=1.0", "flask-sock"],
+    install_requires=["setuptools"],
     zip_safe=True,
     maintainer="orchestration",
     maintainer_email="puranlai@qq.com",
-    description="Description layer HTTP/WS gateway per RFC005.",
+    description="Mock physiological sensor publisher per RFC009.",
     license="MIT",
-    tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            "desc_layer_node = desc_layer.desc_layer_node:main",
+            "physio_mock_publisher_node = physio_mock_publisher.mock_publisher_node:main",
         ],
     },
 )
