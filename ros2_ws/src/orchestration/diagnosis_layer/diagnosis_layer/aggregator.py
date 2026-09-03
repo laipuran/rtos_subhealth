@@ -118,9 +118,11 @@ def parse_thresholds(json_str: str) -> Dict[str, Dict[str, Optional[float]]]:
         for k, v in parsed.items():
             if not isinstance(v, dict):
                 continue
+            low = v.get("low")
+            high = v.get("high")
             norm[k] = {
-                "low": v.get("low"),
-                "high": v.get("high"),
+                "low": float(low) if isinstance(low, (int, float)) else None,
+                "high": float(high) if isinstance(high, (int, float)) else None,
             }
         return norm or dict(ANOMALY_THRESHOLDS)
     except Exception:
