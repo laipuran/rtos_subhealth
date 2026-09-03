@@ -4,8 +4,6 @@
   <version>0.1.0</version>
   <description>Execution layer action server per RFC003/004.</description>
   <maintainer email="puranlai@qq.com">orchestration</maintainer>
-  <maintainer email="2630108632@qq.com">Zeng Yue</maintainer>
-  <maintainer email="3498554977@qq.com">You Qingyu</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_python</buildtool_depend>

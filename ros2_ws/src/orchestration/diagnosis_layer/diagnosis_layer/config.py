@@ -18,8 +18,7 @@ DEFAULTS: Dict[str, object] = {
     "rag_top_k": 3,
 }
 
-# 环境变量名 -> 配置键 的映射（env 优先级高于配置文件，低于 ROS 参数）
-# 注意：build_config 中环境变量可覆盖配置文件的值
+# 环境变量名 -> 配置键 的映射（env 优先级低于 ROS 参数，高于配置文件）
 _ENV_MAP = {
     "LLM_BASE_URL": "llm_base_url",
     "LLM_API_KEY": "llm_api_key",
