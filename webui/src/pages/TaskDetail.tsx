@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { getTask, cancelTask } from "../api/tasks"
 import type { TaskRecord } from "../types/task"
 import TaskStatusBadge from "../components/TaskStatusBadge"
+import RouteMap from "../components/RouteMap"
 import { useToast } from "../components/Toast"
 
 interface Props {
@@ -57,6 +58,19 @@ export default function TaskDetail({ goalId, onBack, liveUpdates }: Props) {
         <TaskStatusBadge state={rec.state} />
       </div>
 
+      <div>
+        <div className="flex justify-between text-xs text-gray-500 mb-1">
+          <span>进度</span>
+          <span>{rec.progress != null ? `${(rec.progress * 100).toFixed(0)}%` : "-"}</span>
+        </div>
+        <div className="h-2 rounded bg-gray-200 overflow-hidden">
+          <div
+            className="h-full bg-blue-500 transition-all"
+            style={{ width: `${rec.progress != null ? rec.progress * 100 : 0}%` }}
+          />
+        </div>
+      </div>
+
       <table className="w-full text-sm">
         <tbody>
           {[
@@ -77,6 +91,15 @@ export default function TaskDetail({ goalId, onBack, liveUpdates }: Props) {
           ))}
         </tbody>
       </table>
+
+      {(rec.route?.length ?? 0) > 0 && (
+        <RouteMap
+          route={rec.route}
+          currentTag={rec.current_tag}
+          targetTags={rec.target_tags}
+          finishedStages={rec.finished_stages}
+        />
+      )}
 
       {isActive && (
         <button

@@ -115,6 +115,8 @@ class MockExecLayerNode(Node):
             feedback.next_tag = target if i < steps else -1
             feedback.error_code = ""
             feedback.message = f"approaching tag {target} (step {i}/{steps})"
+            feedback.route = [1, target]
+            feedback.finished_stages = i
             goal_handle.publish_feedback(feedback)
             self.get_logger().info(f"mock go_to_tag: {i}/{steps}")
 
@@ -146,6 +148,8 @@ class MockExecLayerNode(Node):
             feedback.next_tag = tags[idx + 1] if idx + 1 < len(tags) else -1
             feedback.error_code = ""
             feedback.message = f"patrolled tag {tag} ({idx + 1}/{total})"
+            feedback.route = tags
+            feedback.finished_stages = idx + 1
             goal_handle.publish_feedback(feedback)
             self.get_logger().info(f"mock patrol: tag {tag} ({idx + 1}/{total})")
 

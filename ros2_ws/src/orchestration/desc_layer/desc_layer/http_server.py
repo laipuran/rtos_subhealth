@@ -201,6 +201,12 @@ def broadcast_diagnosis(payload: dict) -> None:
     _push_ws(json.dumps(payload, ensure_ascii=False))
 
 
+def broadcast_vitals(payload: dict) -> None:
+    """Broadcast a `vitals` WS event (实时体征趋势图数据源)."""
+    payload = dict(payload, event="vitals")
+    _push_ws(json.dumps(payload, ensure_ascii=False))
+
+
 def _push_ws(data: str) -> None:
     if not _has_ws:
         return

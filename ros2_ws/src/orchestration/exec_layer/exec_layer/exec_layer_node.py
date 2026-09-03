@@ -40,6 +40,9 @@ class ExecLayerNode(Node):
         # 轮询定时器(可选): 用于 hold 超时 / 取消 / stopped 恢复等场景
         self._poll_timer = None
         self._goal_handle = None
+        # 最近一次规划得到的路径（tag 序列），用于 feedback.route 透传给 WebUI
+        self._current_route: list[int] = []
+        self._current_total: int = 0
 
     # ── Action 生命周期回调 ───────────────────────────────────
 
@@ -129,6 +132,10 @@ class ExecLayerNode(Node):
 
         segments = plan.segments
         total = len(segments)
+        self._current_total = total
+        self._current_route = (
+            [segments[0].from_tag] + [s.to_tag for s in segments] if total else []
+        )
 
         # 无路径段: 起点即终点，直接完成
         if total == 0:
@@ -241,6 +248,10 @@ class ExecLayerNode(Node):
         feedback.error_code = self._fsm.error_code
         feedback.message = self._fsm.message
         feedback.timestamp = self.get_clock().now().to_msg()
+        feedback.route = self._current_route
+        feedback.finished_stages = (
+            int(round(progress * self._current_total)) if self._current_total else 0
+        )
         goal_handle.publish_feedback(feedback)
 
     def _is_canceled(self, goal_handle) -> bool:

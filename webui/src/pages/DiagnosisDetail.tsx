@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react"
 import { getDiagnosis } from "../api/diagnostics"
-import type { DiagnosisRecord } from "../types/diagnosis"
+import type { DiagnosisMetric, DiagnosisRecord } from "../types/diagnosis"
 import DiagnosisSeverityBadge from "../components/DiagnosisSeverityBadge"
+import { sortMetrics, metaOf } from "../utils/physio"
 
 interface Props {
   diagnosisId: string | null
@@ -59,6 +60,13 @@ export default function DiagnosisDetail({ diagnosisId, onBack, liveUpdates }: Pr
         </tbody>
       </table>
 
+      {(merged.metrics?.length ?? 0) > 0 && (
+        <div>
+          <h3 className="font-medium text-gray-700">采集指标</h3>
+          <MetricTable metrics={merged.metrics} />
+        </div>
+      )}
+
       <div>
         <h3 className="font-medium text-gray-700">Possible Causes</h3>
         {merged.possible_causes?.length ? (
@@ -81,5 +89,51 @@ export default function DiagnosisDetail({ diagnosisId, onBack, liveUpdates }: Pr
         <p className="text-xs text-gray-400 italic">{merged.disclaimer}</p>
       )}
     </div>
+  )
+}
+
+function MetricTable({ metrics }: { metrics: DiagnosisMetric[] }) {
+  const rows = sortMetrics(metrics)
+  const fmt = (v: number) => (v == null ? "-" : Number(v).toFixed(1))
+  const fmtTrend = (t: string) => {
+    const map: Record<string, string> = {
+      increasing: "上升",
+      decreasing: "下降",
+      stable: "平稳",
+      unknown: "未知",
+    }
+    return map[t] || t
+  }
+
+  return (
+    <table className="w-full text-sm border">
+      <thead>
+        <tr className="bg-gray-50 text-left">
+          <th className="px-2 py-1 font-medium text-gray-600">数据</th>
+          <th className="px-2 py-1 font-medium text-gray-600 text-right">最新</th>
+          <th className="px-2 py-1 font-medium text-gray-600 text-right">均值</th>
+          <th className="px-2 py-1 font-medium text-gray-600 text-right">最小</th>
+          <th className="px-2 py-1 font-medium text-gray-600 text-right">最大</th>
+          <th className="px-2 py-1 font-medium text-gray-600 text-right">趋势</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((m) => {
+          const meta = metaOf(m.data_type)
+          return (
+            <tr key={m.data_src || m.data_type} className="border-t">
+              <td className="px-2 py-1 text-gray-700">
+                {m.data_type}（{meta.label}）
+              </td>
+              <td className="px-2 py-1 text-right font-mono">{fmt(m.latest)}{meta.unit}</td>
+              <td className="px-2 py-1 text-right font-mono">{fmt(m.mean)}{meta.unit}</td>
+              <td className="px-2 py-1 text-right font-mono">{fmt(m.min)}{meta.unit}</td>
+              <td className="px-2 py-1 text-right font-mono">{fmt(m.max)}{meta.unit}</td>
+              <td className="px-2 py-1 text-right text-gray-600">{fmtTrend(m.trend)}</td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
   )
 }

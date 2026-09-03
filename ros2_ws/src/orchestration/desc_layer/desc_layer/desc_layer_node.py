@@ -9,16 +9,29 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 
 from ros_interfaces.action import ExecTask
-from ros_interfaces.msg import DiagnosisResult
+from ros_interfaces.msg import DiagnosisResult, VitalsStream
 from std_msgs.msg import String
 
-from .http_server import broadcast, broadcast_diagnosis, init_app
+from .http_server import broadcast, broadcast_diagnosis, broadcast_vitals, init_app
 from .diagnosis_store import DiagnosisRecord, DiagnosisStore
 from .task_store import TaskRecord, TaskStore
 
 _STATUS_SUCCEEDED = 4
 _STATUS_CANCELED = 5
 _STATUS_ABORTED = 6
+
+
+def _metric_to_dict(m) -> dict:
+    return {
+        "data_src": m.data_src,
+        "data_type": m.data_type,
+        "latest": float(m.latest),
+        "mean": float(m.mean),
+        "min": float(m.min),
+        "max": float(m.max),
+        "trend": m.trend,
+        "valid": bool(m.valid),
+    }
 
 
 class DescLayerNode(Node):
@@ -34,6 +47,8 @@ class DescLayerNode(Node):
         self._trigger_pub = self.create_publisher(String, "/diagnosis/trigger", 10)
         self._diagnosis_sub = self.create_subscription(
             DiagnosisResult, "/diagnosis/results", self._on_diagnosis, 10)
+        self._vitals_sub = self.create_subscription(
+            VitalsStream, "/diagnosis/monitor", self._on_vitals, 10)
 
         # RFC-009 §9.4: diagnosis retention / cleanup policy.
         self._diagnosis_retention_s = float(
@@ -82,6 +97,7 @@ class DescLayerNode(Node):
         self.get_logger().info(f"HTTP server started on 0.0.0.0:{port}, maps_dir={maps_dir}")
 
     def _on_diagnosis(self, msg: DiagnosisResult) -> None:
+        metrics = [_metric_to_dict(m) for m in msg.metrics]
         rec = DiagnosisRecord(
             diagnosis_id=msg.diagnosis_id,
             source_ids=list(msg.source_ids),
@@ -95,6 +111,7 @@ class DescLayerNode(Node):
             raw_prompt=msg.raw_prompt,
             error_code=msg.error_code,
             error_message=msg.error_message,
+            metrics=metrics,
         )
         self._diagnosis_store.add(rec)
         ts = msg.timestamp.sec + msg.timestamp.nanosec / 1e9
@@ -110,10 +127,18 @@ class DescLayerNode(Node):
             "trace_id": msg.diagnosis_id,
             "error_code": msg.error_code,
             "error_message": msg.error_message,
+            "metrics": metrics,
         })
         self.get_logger().info(
             f"diagnosis {msg.diagnosis_id} stored (severity={msg.severity}, "
             f"error={msg.error_code or '-'})")
+
+    def _on_vitals(self, msg: VitalsStream) -> None:
+        ts = msg.timestamp.sec + msg.timestamp.nanosec / 1e9
+        broadcast_vitals({
+            "timestamp": ts,
+            "metrics": [_metric_to_dict(m) for m in msg.metrics],
+        })
 
     def _cleanup_diagnoses(self) -> None:
         if self._diagnosis_retention_s <= 0:
@@ -200,19 +225,24 @@ class DescLayerNode(Node):
             updates["error_code"] = fb.error_code
         if fb.message:
             updates["message"] = fb.message
+        if getattr(fb, "route", None):
+            updates["route"] = list(fb.route)
+        if hasattr(fb, "finished_stages"):
+            updates["finished_stages"] = int(fb.finished_stages)
         self._task_store.update(goal_id, **updates)
-        broadcast(
-            goal_id,
-            "feedback",
-            {
-                "state": fb.state,
-                "progress": fb.progress,
-                "current_tag": fb.current_tag,
-                "next_tag": fb.next_tag,
-                "error_code": fb.error_code,
-                "message": fb.message,
-            },
-        )
+        ws_update = {
+            "state": fb.state,
+            "progress": fb.progress,
+            "current_tag": fb.current_tag,
+            "next_tag": fb.next_tag,
+            "error_code": fb.error_code,
+            "message": fb.message,
+        }
+        if getattr(fb, "route", None):
+            ws_update["route"] = list(fb.route)
+        if hasattr(fb, "finished_stages"):
+            ws_update["finished_stages"] = int(fb.finished_stages)
+        broadcast(goal_id, "feedback", ws_update)
 
     def _result_callback(self, goal_id: str, future) -> None:
         response = future.result()

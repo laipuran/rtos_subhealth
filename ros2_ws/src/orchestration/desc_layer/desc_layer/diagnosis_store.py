@@ -25,6 +25,7 @@ class DiagnosisRecord:
         raw_prompt: str = "",
         error_code: str = "",
         error_message: str = "",
+        metrics: Optional[List[dict]] = None,
         created_at: Optional[float] = None,
     ) -> None:
         self.diagnosis_id = diagnosis_id
@@ -39,6 +40,7 @@ class DiagnosisRecord:
         self.raw_prompt = raw_prompt
         self.error_code = error_code
         self.error_message = error_message
+        self.metrics = metrics or []
         self.created_at = created_at or time.time()
 
     def to_dict(self) -> dict:
@@ -55,6 +57,7 @@ class DiagnosisRecord:
             "raw_prompt": self.raw_prompt,
             "error_code": self.error_code,
             "error_message": self.error_message,
+            "metrics": list(self.metrics or []),
             "created_at": self.created_at,
         }
 
@@ -79,10 +82,18 @@ class DiagnosisStore:
                 raw_prompt TEXT DEFAULT '',
                 error_code TEXT DEFAULT '',
                 error_message TEXT DEFAULT '',
+                metrics_json TEXT DEFAULT '[]',
                 created_at REAL NOT NULL
             )
         """)
+        self._ensure_column("metrics_json", "TEXT DEFAULT '[]'")
         self._conn.commit()
+
+    def _ensure_column(self, name: str, decl: str) -> None:
+        """Add a column if the (older) DB table already exists without it."""
+        cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(diagnoses)")}
+        if name not in cols:
+            self._conn.execute(f"ALTER TABLE diagnoses ADD COLUMN {name} {decl}")
 
     def add(self, rec: DiagnosisRecord) -> None:
         with self._lock:
@@ -90,10 +101,10 @@ class DiagnosisStore:
                 INSERT OR REPLACE INTO diagnoses
                 (diagnosis_id, source_ids, trigger_type, severity, summary,
                  possible_causes, recommendations, confidence, disclaimer,
-                 raw_prompt, error_code, error_message, created_at)
+                 raw_prompt, error_code, error_message, metrics_json, created_at)
                 VALUES (:diagnosis_id, :source_ids, :trigger_type, :severity, :summary,
                         :possible_causes, :recommendations, :confidence, :disclaimer,
-                        :raw_prompt, :error_code, :error_message, :created_at)
+                        :raw_prompt, :error_code, :error_message, :metrics_json, :created_at)
             """, {
                 "diagnosis_id": rec.diagnosis_id,
                 "source_ids": json.dumps(list(rec.source_ids)),
@@ -107,6 +118,7 @@ class DiagnosisStore:
                 "raw_prompt": rec.raw_prompt,
                 "error_code": rec.error_code,
                 "error_message": rec.error_message,
+                "metrics_json": json.dumps(list(rec.metrics or [])),
                 "created_at": rec.created_at,
             })
             self._conn.commit()
@@ -163,5 +175,6 @@ class DiagnosisStore:
             raw_prompt=row["raw_prompt"],
             error_code=row["error_code"],
             error_message=row["error_message"],
+            metrics=json.loads(row["metrics_json"] or "[]"),
             created_at=row["created_at"],
         )
