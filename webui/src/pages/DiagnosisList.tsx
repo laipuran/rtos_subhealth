@@ -4,6 +4,15 @@ import type { DiagnosisRecord } from "../types/diagnosis"
 import DiagnosisSeverityBadge from "../components/DiagnosisSeverityBadge"
 import { useToast } from "../components/Toast"
 
+function relTime(ts: number): string {
+  const d = Math.floor((Date.now() / 1000 - ts) / 1000)
+  if (d < 5) return "now"
+  if (d < 60) return `${d}s`
+  if (d < 3600) return `${Math.floor(d / 60)}m`
+  if (d < 86400) return `${Math.floor(d / 3600)}h`
+  return `${Math.floor(d / 86400)}d`
+}
+
 interface Props {
   refreshKey: number
   onSelect: (id: string) => void
@@ -85,11 +94,21 @@ export default function DiagnosisList({ refreshKey, onSelect, liveUpdates }: Pro
         >
           <div className="flex items-center justify-between">
             <span className="font-mono text-xs text-gray-500">{d.diagnosis_id.slice(0, 8)}</span>
-            <DiagnosisSeverityBadge severity={d.severity} />
+            <div className="flex items-center gap-2">
+              <DiagnosisSeverityBadge severity={d.severity} />
+              <span className="text-xs text-gray-400">{relTime(d.created_at)}</span>
+            </div>
           </div>
           <div className="text-sm mt-1">
             <span className="font-medium">{d.trigger_type}</span>
-            <span className="text-gray-500 ml-2">{d.source_ids.join(", ")}</span>
+            <span className="text-gray-500 ml-2">
+              {d.confidence != null ? `${(d.confidence * 100).toFixed(0)}%` : ""}
+            </span>
+            <span className="text-gray-400 ml-2">
+              {d.source_ids.length > 0
+                ? `· ${d.source_ids.map((s) => s.replace("mock_", "")).join(", ")}`
+                : ""}
+            </span>
           </div>
           {d.summary && <p className="text-xs text-gray-600 mt-1 line-clamp-2">{d.summary}</p>}
           {d.error_code && <p className="text-xs text-red-500 mt-1">{d.error_code}</p>}

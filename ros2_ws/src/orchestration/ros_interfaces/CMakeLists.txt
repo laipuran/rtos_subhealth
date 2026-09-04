@@ -15,6 +15,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Constraints.msg"
   "msg/Segment.msg"
   "msg/DiagnosisResult.msg"
+  "msg/DiagnosisMetric.msg"
+  "msg/VitalsStream.msg"
   DEPENDENCIES builtin_interfaces
 )
 

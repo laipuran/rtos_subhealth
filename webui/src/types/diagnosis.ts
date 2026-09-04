@@ -2,6 +2,17 @@ export type DiagnosisSeverity = "normal" | "mild" | "moderate" | "severe" | "cri
 
 export type DiagnosisTrigger = "periodic" | "anomaly" | "manual"
 
+export interface DiagnosisMetric {
+  data_src: string
+  data_type: string
+  latest: number
+  mean: number
+  min: number
+  max: number
+  trend: string
+  valid: boolean
+}
+
 export interface DiagnosisRecord {
   diagnosis_id: string
   source_ids: string[]
@@ -15,6 +26,7 @@ export interface DiagnosisRecord {
   raw_prompt: string
   error_code: string
   error_message: string
+  metrics: DiagnosisMetric[]
   created_at: number
 }
 
@@ -38,4 +50,11 @@ export interface WsDiagnosisMessage {
   trace_id: string
   error_code?: string
   error_message?: string
+  metrics?: DiagnosisMetric[]
+}
+
+export interface VitalsStreamMessage {
+  event?: string
+  timestamp: number
+  metrics: DiagnosisMetric[]
 }

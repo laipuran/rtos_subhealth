@@ -10,7 +10,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from std_msgs.msg import String
 
 from physio_interfaces.msg import PhysioSample
-from ros_interfaces.msg import DiagnosisResult
+from ros_interfaces.msg import DiagnosisMetric, DiagnosisResult, VitalsStream
 
 from .aggregator import Sample, Window, build_snapshot, is_anomalous, parse_thresholds
 from .config import build_config
@@ -35,6 +35,20 @@ def _job_key(trigger_type: str, source_ids: List[str]) -> Tuple[str, frozenset]:
     return (trigger_type, frozenset(source_ids))
 
 
+def _metric_from_snapshot(s: Dict) -> DiagnosisMetric:
+    """Convert a snapshot source entry into a DiagnosisMetric message."""
+    m = DiagnosisMetric()
+    m.data_src = str(s.get("data_src", ""))
+    m.data_type = str(s.get("data_type", ""))
+    m.latest = float(s.get("latest") or 0.0)
+    m.mean = float(s.get("mean") or 0.0)
+    m.min = float(s.get("min") or 0.0)
+    m.max = float(s.get("max") or 0.0)
+    m.trend = str(s.get("trend") or "unknown")
+    m.valid = bool(s.get("valid"))
+    return m
+
+
 class DiagnosisLayerNode(Node):
     def __init__(self) -> None:
         super().__init__("diagnosis_layer")
@@ -46,6 +60,7 @@ class DiagnosisLayerNode(Node):
         self._window_seconds = float(self.declare_parameter("window_seconds", 60.0).value)
         self._periodic_interval_s = float(self.declare_parameter("periodic_interval_s", 60.0).value)
         self._anomaly_cooldown_s = float(self.declare_parameter("anomaly_cooldown_s", 30.0).value)
+        self._monitor_interval_s = float(self.declare_parameter("monitor_interval_s", 1.0).value)
         # RFC-009 §9.3: configurable per-data_type anomaly thresholds (JSON string).
         thresholds_json = self.declare_parameter("anomaly_thresholds", "").value
         self._thresholds = parse_thresholds(thresholds_json or "")
@@ -102,8 +117,10 @@ class DiagnosisLayerNode(Node):
                 lambda msg, ds=ds: self._on_sample(ds, msg), qos)
         self.create_subscription(String, "/diagnosis/trigger", self._on_manual_trigger, qos)
         self._result_pub = self.create_publisher(DiagnosisResult, "/diagnosis/results", qos)
+        self._monitor_pub = self.create_publisher(VitalsStream, "/diagnosis/monitor", qos)
 
         self._timer = self.create_timer(self._periodic_interval_s, self._on_periodic)
+        self._monitor_timer = self.create_timer(self._monitor_interval_s, self._publish_vitals)
         self.get_logger().info(
             f"Diagnosis layer ready. RAG mode={self._retriever.mode}, "
             f"LLM enabled={self._llm.enabled}, sources={list(data_sources)}")
@@ -143,6 +160,26 @@ class DiagnosisLayerNode(Node):
 
     def _on_periodic(self) -> None:
         self._start_job("periodic", list(self._windows.keys()))
+
+    def _publish_vitals(self) -> None:
+        """Publish current per-source window stats for the live WebUI chart."""
+        now = self.get_clock().now().nanoseconds / 1e9
+        msg = VitalsStream()
+        msg.timestamp = self.get_clock().now().to_msg()
+        for ds, win in self._windows.items():
+            win.prune(now)
+            st = win.stats()
+            m = DiagnosisMetric()
+            m.data_src = ds
+            m.data_type = win.data_type
+            m.latest = float(st.get("latest") or 0.0)
+            m.mean = float(st.get("mean") or 0.0)
+            m.min = float(st.get("min") or 0.0)
+            m.max = float(st.get("max") or 0.0)
+            m.trend = str(st.get("trend") or "unknown")
+            m.valid = bool(st.get("valid"))
+            msg.metrics.append(m)
+        self._monitor_pub.publish(msg)
 
     # --- concurrency / job control ---
 
@@ -210,6 +247,7 @@ class DiagnosisLayerNode(Node):
         result.recommendations = []
         result.confidence = 0.0
         result.disclaimer = ""
+        result.metrics = [_metric_from_snapshot(s) for s in snapshot.get("sources", [])]
 
         if not self._llm.enabled:
             result.error_code = "LLM_DISABLED"

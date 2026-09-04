@@ -24,6 +24,8 @@ class TaskRecord:
         error_code: str = "",
         message: str = "",
         result: Optional[ExecTask.Result] = None,
+        route: Optional[list] = None,
+        finished_stages: int = 0,
         created_at: Optional[float] = None,
         updated_at: Optional[float] = None,
     ) -> None:
@@ -36,6 +38,8 @@ class TaskRecord:
         self.error_code = error_code
         self.message = message
         self.result = result
+        self.route = list(route) if route else []
+        self.finished_stages = finished_stages
         self.created_at = created_at or time.time()
         self.updated_at = updated_at or time.time()
 
@@ -53,6 +57,8 @@ class TaskRecord:
             "error_code": self.error_code,
             "message": self.message,
             "final_state": self.result.final_state if self.result else None,
+            "route": list(self.route or []),
+            "finished_stages": self.finished_stages,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -83,6 +89,8 @@ class TaskRecord:
                 "error_code": self.result.error_code if self.result else "",
                 "message": self.result.message if self.result else "",
             }) if self.result else "",
+            "route_json": json.dumps(list(self.route or [])),
+            "finished_stages": self.finished_stages,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -105,11 +113,21 @@ class TaskStore:
                 error_code TEXT DEFAULT '',
                 message TEXT DEFAULT '',
                 result_json TEXT DEFAULT '',
+                route_json TEXT DEFAULT '[]',
+                finished_stages INTEGER DEFAULT 0,
                 created_at REAL NOT NULL,
                 updated_at REAL NOT NULL
             )
         """)
+        self._ensure_column("route_json", "TEXT DEFAULT '[]'")
+        self._ensure_column("finished_stages", "INTEGER DEFAULT 0")
         self._conn.commit()
+
+    def _ensure_column(self, name: str, decl: str) -> None:
+        """Add a column if the (older) DB table already exists without it."""
+        cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(tasks)")}
+        if name not in cols:
+            self._conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {decl}")
 
     def add(self, record: TaskRecord) -> None:
         with self._lock:
@@ -117,10 +135,11 @@ class TaskStore:
             self._conn.execute("""
                 INSERT OR REPLACE INTO tasks
                 (goal_id, goal_json, state, progress, current_tag, next_tag,
-                 error_code, message, result_json, created_at, updated_at)
+                 error_code, message, result_json, route_json, finished_stages,
+                 created_at, updated_at)
                 VALUES (:goal_id, :goal_json, :state, :progress, :current_tag,
                         :next_tag, :error_code, :message, :result_json,
-                        :created_at, :updated_at)
+                        :route_json, :finished_stages, :created_at, :updated_at)
             """, row)
             self._conn.commit()
 
@@ -143,6 +162,8 @@ class TaskStore:
         error_code: Optional[str] = None,
         message: Optional[str] = None,
         result: Optional[ExecTask.Result] = None,
+        route: Optional[list] = None,
+        finished_stages: Optional[int] = None,
     ) -> None:
         with self._lock:
             fields = []
@@ -172,6 +193,12 @@ class TaskStore:
                     "error_code": result.error_code,
                     "message": result.message,
                 }))
+            if route is not None:
+                fields.append("route_json = ?")
+                values.append(json.dumps(list(route)))
+            if finished_stages is not None:
+                fields.append("finished_stages = ?")
+                values.append(int(finished_stages))
             fields.append("updated_at = ?")
             values.append(time.time())
             values.append(goal_id)
@@ -238,6 +265,8 @@ class TaskStore:
             error_code=row["error_code"],
             message=row["message"],
             result=result,
+            route=json.loads(row["route_json"] or "[]"),
+            finished_stages=row["finished_stages"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )

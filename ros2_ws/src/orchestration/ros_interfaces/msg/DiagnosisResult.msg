@@ -12,3 +12,4 @@ string disclaimer
 string raw_prompt
 string error_code
 string error_message
+DiagnosisMetric[] metrics   # 参与本次诊断的各源窗口统计

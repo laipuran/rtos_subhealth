@@ -35,6 +35,8 @@ export interface TaskRecord {
   error_code: string
   message: string
   final_state: string | null
+  route: number[]
+  finished_stages: number
   created_at: number
   updated_at: number
 }
@@ -49,6 +51,8 @@ export interface WsMessage {
   error_code?: string
   message?: string
   final_state?: TaskState
+  route?: number[]
+  finished_stages?: number
 }
 
 export interface CreateTaskResponse {
