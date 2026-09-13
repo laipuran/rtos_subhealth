@@ -47,7 +47,7 @@ bash "$REPO_ROOT/ros2_ws/scripts/register_rust_packages.sh" "$WS/install"
 trap 'rm -rf "$REPO_ROOT/.cargo"' EXIT
 cd "$REPO_ROOT"
 colcon build --merge-install \
-  --base-paths "$REPO_ROOT/ros2_ws/src/robot/adapter" \
+  --base-paths "$REPO_ROOT/ros2_ws/src/robot/adapter" "$REPO_ROOT/ros2_ws/src/robot/orchestrator" \
   --build-base "$WS/build_nodes" --install-base "$WS/install_nodes"
 
 echo "[OK] Rust ROS nodes built into $WS/install_nodes"
