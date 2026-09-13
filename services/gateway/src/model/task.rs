@@ -42,33 +42,22 @@ pub struct TaskTarget {
 }
 
 impl TaskTarget {
-    pub fn from_value(v: &Value) -> Self {
-        Self {
-            kind: v
-                .get("kind")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string(),
-            tag_id: v.get("tag_id").and_then(Value::as_i64).unwrap_or(0) as i32,
-            waypoint_id: v
-                .get("waypoint_id")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string(),
-            action_id: v
-                .get("action_id")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string(),
-            position_tolerance_m: v
-                .get("position_tolerance_m")
-                .and_then(Value::as_f64)
-                .unwrap_or(0.0) as f32,
-            yaw_tolerance_rad: v
-                .get("yaw_tolerance_rad")
-                .and_then(Value::as_f64)
-                .unwrap_or(0.0) as f32,
-        }
+    pub fn from_value(value: &Value) -> Result<Self, ApiError> {
+        let target = value
+            .as_object()
+            .ok_or_else(|| invalid_goal("target must be an object"))?;
+        Ok(Self {
+            kind: optional_string(target.get("kind"), "kind")?.unwrap_or_default(),
+            tag_id: match target.get("tag_id") {
+                Some(tag_id) => tag_id_from_value(tag_id)?,
+                None => 0,
+            },
+            waypoint_id: optional_string(target.get("waypoint_id"), "waypoint_id")?
+                .unwrap_or_default(),
+            action_id: optional_string(target.get("action_id"), "action_id")?.unwrap_or_default(),
+            position_tolerance_m: optional_f32(target, "position_tolerance_m")?.unwrap_or(0.0),
+            yaw_tolerance_rad: optional_f32(target, "yaw_tolerance_rad")?.unwrap_or(0.0),
+        })
     }
 }
 
@@ -99,8 +88,8 @@ impl Goal {
         let primitive = required_string(value, "primitive")?;
         let target = value
             .get("target")
-            .filter(|target| !target.is_null())
-            .map(TaskTarget::from_value);
+            .map(TaskTarget::from_value)
+            .transpose()?;
         if primitive == "move_to_pose"
             && !matches!(target.as_ref(), Some(target) if target.kind == "tag" && target.tag_id != 0)
         {
@@ -109,16 +98,10 @@ impl Goal {
                 "move_to_pose requires target.kind 'tag' with a non-zero tag_id",
             ));
         }
-        let constraints = constraints_from_value(value);
-        let deadline_ms = value
-            .get("deadline_ms")
-            .and_then(Value::as_i64)
-            .unwrap_or(0);
-        let params_json = value
-            .get("params_json")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
+        let constraints = constraints_from_value(value)?;
+        let deadline_ms = optional_i64(value, "deadline_ms")?.unwrap_or(0);
+        let params_json =
+            optional_string(value.get("params_json"), "params_json")?.unwrap_or_default();
 
         Ok(Self {
             type_: primitive.clone(),
@@ -158,19 +141,17 @@ impl Goal {
                         "go_to_tag requires exactly one integer tag",
                     ));
                 }
-                let tag_id = tags[0].as_i64().filter(|id| *id != 0).ok_or_else(|| {
-                    ApiError::new(
-                        ErrorCode::InvalidGoal,
-                        "go_to_tag requires one non-zero integer tag",
-                    )
-                })? as i32;
+                let tag_id = tag_id_from_value(&tags[0])?;
+                if tag_id == 0 {
+                    return Err(invalid_goal("go_to_tag requires one non-zero integer tag"));
+                }
                 Ok(Self {
                     type_: "move_to_pose".to_string(),
                     priority: 0,
                     route_id: String::new(),
                     target_tags: vec![tag_id],
-                    constraints: constraints_from_value(goal),
-                    deadline_ms: goal.get("deadline_ms").and_then(Value::as_i64).unwrap_or(0),
+                    constraints: constraints_from_value(goal)?,
+                    deadline_ms: optional_i64(goal, "deadline_ms")?.unwrap_or(0),
                     device_id,
                     primitive: "move_to_pose".to_string(),
                     target: Some(TaskTarget {
@@ -186,8 +167,8 @@ impl Goal {
                 priority: 0,
                 route_id: String::new(),
                 target_tags: Vec::new(),
-                constraints: constraints_from_value(goal),
-                deadline_ms: goal.get("deadline_ms").and_then(Value::as_i64).unwrap_or(0),
+                constraints: constraints_from_value(goal)?,
+                deadline_ms: optional_i64(goal, "deadline_ms")?.unwrap_or(0),
                 device_id,
                 primitive: "hold".to_string(),
                 target: None,
@@ -303,7 +284,7 @@ impl Goal {
         let target = body
             .get("target")
             .filter(|v| !v.is_null())
-            .map(TaskTarget::from_value);
+            .and_then(|target| TaskTarget::from_value(target).ok());
         let c = body.get("constraints").cloned().unwrap_or(Value::Null);
         let constraints = Constraints {
             max_speed_mps: c
@@ -357,28 +338,77 @@ fn required_string(value: &Value, field: &str) -> Result<String, ApiError> {
         .ok_or_else(|| ApiError::new(ErrorCode::InvalidGoal, format!("missing {field}")))
 }
 
-fn constraints_from_value(value: &Value) -> Constraints {
-    let constraints = value.get("constraints").cloned().unwrap_or(Value::Null);
-    Constraints {
-        max_speed_mps: constraints
-            .get("max_speed_mps")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0) as f32,
-        min_clearance_m: constraints
-            .get("min_clearance_m")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0) as f32,
-        avoid_tags: constraints
-            .get("avoid_tags")
-            .and_then(Value::as_array)
-            .map(|tags| {
-                tags.iter()
-                    .filter_map(Value::as_i64)
-                    .map(|tag| tag as i32)
-                    .collect()
-            })
-            .unwrap_or_default(),
-    }
+fn invalid_goal(message: impl Into<String>) -> ApiError {
+    ApiError::new(ErrorCode::InvalidGoal, message)
+}
+
+fn optional_string(value: Option<&Value>, field: &str) -> Result<Option<String>, ApiError> {
+    value
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| invalid_goal(format!("{field} must be a string")))
+        })
+        .transpose()
+}
+
+fn optional_i64(value: &Value, field: &str) -> Result<Option<i64>, ApiError> {
+    value
+        .get(field)
+        .map(|value| {
+            value
+                .as_i64()
+                .ok_or_else(|| invalid_goal(format!("{field} must be an integer")))
+        })
+        .transpose()
+}
+
+fn optional_f32(
+    value: &serde_json::Map<String, Value>,
+    field: &str,
+) -> Result<Option<f32>, ApiError> {
+    value
+        .get(field)
+        .map(|value| {
+            value
+                .as_f64()
+                .map(|value| value as f32)
+                .ok_or_else(|| invalid_goal(format!("{field} must be a number")))
+        })
+        .transpose()
+}
+
+fn tag_id_from_value(value: &Value) -> Result<i32, ApiError> {
+    value
+        .as_i64()
+        .ok_or_else(|| invalid_goal("tag ID must be an integer"))
+        .and_then(|tag_id| {
+            i32::try_from(tag_id).map_err(|_| invalid_goal("tag ID is outside the i32 range"))
+        })
+}
+
+fn constraints_from_value(value: &Value) -> Result<Constraints, ApiError> {
+    let Some(value) = value.get("constraints") else {
+        return Ok(Constraints::default());
+    };
+    let constraints = value
+        .as_object()
+        .ok_or_else(|| invalid_goal("constraints must be an object"))?;
+    let avoid_tags = match constraints.get("avoid_tags") {
+        Some(value) => value
+            .as_array()
+            .ok_or_else(|| invalid_goal("constraints.avoid_tags must be an array"))?
+            .iter()
+            .map(tag_id_from_value)
+            .collect::<Result<Vec<_>, _>>()?,
+        None => Vec::new(),
+    };
+    Ok(Constraints {
+        max_speed_mps: optional_f32(constraints, "max_speed_mps")?.unwrap_or(0.0),
+        min_clearance_m: optional_f32(constraints, "min_clearance_m")?.unwrap_or(0.0),
+        avoid_tags,
+    })
 }
 
 #[derive(Debug, Clone)]

@@ -303,3 +303,65 @@ async fn legacy_navigation_with_multiple_tags_is_rejected() {
     .await;
     assert_invalid_goal(response).await;
 }
+
+#[tokio::test]
+async fn canonical_navigation_rejects_out_of_range_tag_ids_without_dispatch() {
+    let app = test_app("");
+    for tag_id in [
+        i64::from(i32::MAX) + 1,
+        i64::from(i32::MIN) - 1,
+        (1_i64 << 32) + 1,
+    ] {
+        let response = post_task(
+            &app,
+            json!({
+                "device_id": "mock",
+                "primitive": "move_to_pose",
+                "target": {"kind": "tag", "tag_id": tag_id}
+            }),
+        )
+        .await;
+        assert_invalid_goal(response).await;
+    }
+    assert!(app.bridge.commands().is_empty());
+}
+
+#[tokio::test]
+async fn legacy_navigation_rejects_out_of_range_tag_ids_without_dispatch() {
+    let app = test_app("");
+    for tag_id in [
+        i64::from(i32::MAX) + 1,
+        i64::from(i32::MIN) - 1,
+        (1_i64 << 32) + 1,
+    ] {
+        let response = post_task(
+            &app,
+            json!({
+                "target_device": "mock",
+                "goal": {"type": "go_to_tag", "target_tags": [tag_id]}
+            }),
+        )
+        .await;
+        assert_invalid_goal(response).await;
+    }
+    assert!(app.bridge.commands().is_empty());
+}
+
+#[tokio::test]
+async fn canonical_task_rejects_malformed_optional_fields_without_dispatch() {
+    let app = test_app("");
+    for malformed_field in [
+        json!({"target": "tag"}),
+        json!({"params_json": 1}),
+        json!({"deadline_ms": "soon"}),
+        json!({"constraints": []}),
+        json!({"constraints": {"avoid_tags": "not-an-array"}}),
+    ] {
+        let mut body = json!({"device_id": "mock", "primitive": "hold"});
+        body.as_object_mut()
+            .unwrap()
+            .extend(malformed_field.as_object().unwrap().clone());
+        assert_invalid_goal(post_task(&app, body).await).await;
+    }
+    assert!(app.bridge.commands().is_empty());
+}
