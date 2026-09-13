@@ -39,7 +39,7 @@ host 上执行时会自动通过 `docker compose` 进入 `ros-dev:jazzy` 容器�
    ```
 
 容器里已就绪：Rust 1.85 + `rust-analyzer`、ROS 2 Jazzy、colcon、`cargo-deb`。
-续期后 rust-analyzer 会自动分析 `services/`（纯 Rust workspace）与 `ros2_ws`
+重开容器后 rust-analyzer 会自动分析 `services/`（纯 Rust workspace）与 `ros2_ws`
 下的 7 个 rclrs 节点。
 
 ### 2.2 不使用 VS Code

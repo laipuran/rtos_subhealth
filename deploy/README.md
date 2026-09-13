@@ -51,8 +51,8 @@ robot).
 
 ```bash
 curl -fsSL https://apt.example.com/ros-key.gpg \
-  | sudo tee /etc/keyrings/ros.gpg >/dev/null
-echo "deb [signed-by=/etc/keyrings/ros.gpg] https://apt.example.com/ros jazzy main" \
+  | sudo tee /etc/apt/keyrings/ros.gpg >/dev/null
+echo "deb [signed-by=/etc/apt/keyrings/ros.gpg] https://apt.example.com/ros jazzy main" \
   | sudo tee /etc/apt/sources.list.d/ros.list
 sudo apt update
 sudo apt install ros-subhealth-nodes gateway

@@ -143,5 +143,4 @@ publish:
 clean:
 	cargo clean
 	rm -rf webui/dist dist
-	rm -f ros2_ws/.cargo/config.toml
-	rm -rf ros2_ws/src/robot/*/target
+	rm -rf ros2_ws/.cargo

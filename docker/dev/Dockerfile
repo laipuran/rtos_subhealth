@@ -41,6 +41,12 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
 # release that still builds with the 1.85 toolchain.
 RUN cargo install cargo-deb --version 2.8.0 --locked
 
+# The node build workspace is a named volume. Pre-create it owned by the dev
+# user so a fresh volume inherits writable ownership; keep the shared Cargo home
+# (registry cache mount lives at /usr/local/cargo/registry) writable too.
+RUN mkdir -p /ws && chown ubuntu:ubuntu /ws \
+ && chmod -R a+w /usr/local/cargo /usr/local/rustup
+
 # colcon plugins that teach colcon to build Cargo packages (rclrs).
 RUN pip install --no-cache-dir --break-system-packages colcon-cargo colcon-ros-cargo || true
 

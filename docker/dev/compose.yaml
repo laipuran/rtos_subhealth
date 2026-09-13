@@ -22,15 +22,19 @@ services:
     volumes:
       - ../..:/workspace
       - ros2rust_ws:/ws
-      - cargo_reg:/usr/local/cargo
+      # Cache ONLY the Cargo registry. The toolchain (cargo, rust-analyzer,
+      # cargo-deb) lives in the image, so a fresh/empty volume still works.
+      - cargo_reg:/usr/local/cargo/registry
     working_dir: /workspace
     stdin_open: true
     tty: true
     command: sleep infinity
 
 volumes:
-  # Pre-existing volumes holding the ROS build and the Cargo registry cache.
+  # Declared (not `external`) with an explicit name: Compose creates the volume
+  # when missing and reuses an existing one, so a fresh clone works without a
+  # manual `docker volume create`.
   ros2rust_ws:
-    external: true
+    name: ros2rust_ws
   cargo_reg:
-    external: true
+    name: cargo_reg
