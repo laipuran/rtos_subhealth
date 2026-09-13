@@ -1,0 +1,30 @@
+[Unit]
+Description=ROS Subhealth HTTP/WS gateway
+Documentation=https://github.com/laipuran/rtos_subhealth
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/gateway
+EnvironmentFile=-/etc/ros/gateway.env
+
+# API token is stored encrypted and exposed as $CREDENTIALS_DIRECTORY/api-token.
+# Create with: systemd-creds encrypt /etc/ros/api-token /etc/ros/api-token.cred
+LoadCredentialEncrypted=api-token:/etc/ros/api-token.cred
+
+# Mutable state on a dedicated directory (survives A/B rootfs updates).
+StateDirectory=ros
+LogsDirectory=ros
+RuntimeDirectory=ros
+
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/ros /var/log/ros
+
+[Install]
+WantedBy=multi-user.target

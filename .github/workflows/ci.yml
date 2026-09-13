@@ -1,0 +1,59 @@
+name: ci
+
+on:
+  push:
+    branches: [master, 'feat.*']
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: rust lint + test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+  ros:
+    name: ros build (jazzy container)
+    runs-on: ubuntu-24.04
+    container: ros:jazzy-ros-base
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build deps
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            cmake build-essential git curl pkg-config libclang-dev \
+            python3-pip python3-colcon-common-extensions python3-vcstool \
+            ros-jazzy-rmw-cyclonedds-cpp ros-jazzy-cv-bridge ros-jazzy-sensor-msgs \
+            ros-jazzy-rosidl-default-generators ros-jazzy-rosidl-default-runtime \
+            ros-jazzy-test-msgs ros-jazzy-example-interfaces
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - name: Install colcon cargo plugins
+        run: pip install --no-cache-dir --break-system-packages colcon-cargo colcon-ros-cargo
+      - name: Build interfaces and Rust nodes
+        run: bash docker/dev/build_ros_rust.sh
+
+  webui:
+    name: webui build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: webui/pnpm-lock.yaml
+      - run: cd webui && pnpm install --frozen-lockfile && pnpm build

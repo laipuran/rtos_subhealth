@@ -1,0 +1,16 @@
+name: ros-dev
+
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ros-dev:jazzy
+    network_mode: host
+    environment:
+      RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+      ROS_DOMAIN_ID: "1"
+    volumes:
+      - ../..:/workspace
+    working_dir: /workspace
+    command: bash
