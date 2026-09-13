@@ -19,6 +19,7 @@ WS="${ROS_RUST_WS:-/tmp/ros_rust_ws}"
 source /opt/ros/jazzy/setup.bash
 
 mkdir -p "$WS/src"
+rm -rf "$WS/repo"  # clean any earlier in-workspace node copy
 clone() { [ -d "$WS/src/$2" ] || git clone --quiet --depth 1 -b "$1" "$3" "$WS/src/$2"; }
 
 [ -d "$WS/src/rosidl_rust" ] || \
@@ -42,19 +43,25 @@ colcon build --merge-install --packages-up-to \
 source install/setup.bash
 bash "$REPO_ROOT/ros2_ws/scripts/register_rust_packages.sh" "$WS/install"
 
-# Cargo reads `.cargo/config.toml` from the manifest's ancestors, so run the
-# node build from the repo root and clean the generated config afterwards.
-trap 'rm -rf "$REPO_ROOT/.cargo"' EXIT
-cd "$REPO_ROOT"
+# colcon-ros-cargo writes a generated `.cargo/config.toml` next to the build
+# cwd. Build the nodes from a throwaway copy under the workspace volume so that
+# file never lands in the mounted repo (a stray ROS patch config breaks
+# host-side tools such as rust-analyzer).
+NODE_ROOT="${ROS_RUST_NODES:-/tmp/ros_rust_nodes}"
+NODE_SRC="$NODE_ROOT/ros2_ws/src/robot"
+rm -rf "$NODE_ROOT"
+mkdir -p "$NODE_SRC"
+# The service crates inherit from the workspace root, so copy it as well.
+cp "$REPO_ROOT/Cargo.toml" "$NODE_ROOT/Cargo.toml"
+[ -f "$REPO_ROOT/Cargo.lock" ] && cp "$REPO_ROOT/Cargo.lock" "$NODE_ROOT/Cargo.lock"
+[ -f "$REPO_ROOT/rust-toolchain.toml" ] && cp "$REPO_ROOT/rust-toolchain.toml" "$NODE_ROOT/rust-toolchain.toml"
+cp -r "$REPO_ROOT/services" "$NODE_ROOT/services"
+for pkg in adapter orchestrator physio_mock diagnosis_node perception_sim perception_camera gateway_bridge; do
+  cp -r "$REPO_ROOT/ros2_ws/src/robot/$pkg" "$NODE_SRC/$pkg"
+done
+
+cd "$NODE_SRC"
 colcon build --merge-install \
-  --base-paths \
-    "$REPO_ROOT/ros2_ws/src/robot/adapter" \
-    "$REPO_ROOT/ros2_ws/src/robot/orchestrator" \
-    "$REPO_ROOT/ros2_ws/src/robot/physio_mock" \
-    "$REPO_ROOT/ros2_ws/src/robot/diagnosis_node" \
-    "$REPO_ROOT/ros2_ws/src/robot/perception_sim" \
-    "$REPO_ROOT/ros2_ws/src/robot/perception_camera" \
-    "$REPO_ROOT/ros2_ws/src/robot/gateway_bridge" \
   --build-base "$WS/build_nodes" --install-base "$WS/install_nodes"
 
 echo "[OK] Rust ROS nodes built into $WS/install_nodes"

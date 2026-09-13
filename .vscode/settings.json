@@ -1,3 +1,13 @@
 {
-    "cmake.ignoreCMakeListsMissing": true
+    "cmake.ignoreCMakeListsMissing": true,
+    "rust-analyzer.linkedProjects": [
+        "Cargo.toml"
+    ],
+    "rust-analyzer.files.excludeDirs": [
+        "ros2_ws",
+        "legacy",
+        "target",
+        "webui",
+        "docker"
+    ]
 }
