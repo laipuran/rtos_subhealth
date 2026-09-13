@@ -1,0 +1,23 @@
+[Unit]
+Description=ROS Subhealth device adapter (%i)
+Documentation=https://github.com/laipuran/rtos_subhealth
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Device-specific settings, e.g. /etc/ros/adapter-mock.env or adapter-tonypi.env
+EnvironmentFile=/etc/ros/adapter-%i.env
+EnvironmentFile=-/etc/ros/adapter-%i.env.local
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=ROS_DOMAIN_ID=1
+ExecStart=/usr/bin/adapter
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

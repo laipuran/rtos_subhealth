@@ -36,12 +36,14 @@ flowchart LR
 services/gateway/     Rust HTTP/WS gateway (replaces desc_layer)
 services/diagnosis/   Rust aggregation + anomaly + RAG + LLM core
 services/orchestrator-core/  Rust task routing + device registry (pure logic)
-services/device-sdk/  Rust adapter contract + mock / differential-drive backends
+services/device-sdk/  Rust adapter contract + mock / diff-drive / TonyPi backends
 ros2_ws/src/robot/interfaces/  ROS 2 interfaces (no prefix)
-ros2_ws/src/robot/    ROS nodes + adapters (added per milestone)
+ros2_ws/src/robot/adapter/     rclrs device adapter node (mock / diff_drive / tonypi)
+ros2_ws/src/robot/orchestrator/  rclrs orchestrator node (discovery + routing)
 webui/                React + Vite UI (served by the gateway)
 deploy/               debian, systemd, apt, rauc, config, spikes
 docker/dev/           pinned Jazzy + Rust dev image
+legacy/               retired Python / Foxy implementation (reference only)
 docs/                 spec, plan, ADRs, RFCs, research
 ```
 
@@ -80,13 +82,15 @@ docker run --rm -v "$PWD":/workspace -w /workspace ros-dev:jazzy \
 | Device interfaces (`device_interfaces`, `DeviceTask`) | built and verified in container |
 | Orchestrator core (pure logic) | implemented + tested (`services/orchestrator-core`) |
 | Device adapter SDK (mock + diff-drive sim) | implemented + tested (`services/device-sdk`) |
-| rclrs adapter node (mock / diff-drive, `DeviceTask` action) | builds in Jazzy container (`docker/dev/build_ros_rust.sh`) |
-| TonyPi interface recon | done (`deploy/spikes/tonypi_interface.md`) |
+| rclrs adapter node (mock / diff_drive / tonypi, `DeviceTask` action) | builds in Jazzy container; mock + TonyPi paths verified end-to-end |
+| rclrs orchestrator node (discovery + routing) | builds; mock and TonyPi vertical slices verified end-to-end |
+| TonyPi backend (JSON-RPC `RunAction`) | implemented + tested (`services/device-sdk/src/tonypi.rs`) |
 | GO2 DDS spike (optional, deferred) | runbook ready (`deploy/spikes/go2_lowcmd_probe.md`) |
-| rclrs orchestrator node (action client / routing) | next (M3b) |
-| TonyPi adapter | next (M4), depends on M3b |
-| Deployment (deb/apt/systemd/RAUC) | scaffolded |
-| Retire legacy Python packages | pending M5 |
+| Perception (AprilTag) Rust port | next |
+| Planner / WorldModel (tag/waypoint/pose providers) | next |
+| Safety supervisor (limits / watchdog / estop) | next |
+| Deployment (deb/apt/systemd/RAUC) | systemd units added; deb/apt/RAUC scaffolded |
+| Retired legacy Python packages | moved to `legacy/` (out of the build tree) |
 
 ## Documentation
 

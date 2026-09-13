@@ -1,0 +1,21 @@
+[Unit]
+Description=ROS Subhealth task orchestrator
+Documentation=https://github.com/laipuran/rtos_subhealth
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/ros/orchestrator.env
+Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+Environment=ROS_DOMAIN_ID=1
+ExecStart=/usr/bin/orchestrator
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
