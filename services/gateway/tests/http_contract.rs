@@ -403,3 +403,21 @@ async fn canonical_task_rejects_malformed_optional_fields_without_dispatch() {
     }
     assert!(app.bridge.commands().is_empty());
 }
+
+#[tokio::test]
+async fn canonical_task_rejects_non_finite_f32_command_fields_without_dispatch() {
+    let app = test_app("");
+    for malformed_field in [
+        json!({"constraints": {"max_speed_mps": 1e100}}),
+        json!({"constraints": {"min_clearance_m": 1e100}}),
+        json!({"target": {"position_tolerance_m": 1e100}}),
+        json!({"target": {"yaw_tolerance_rad": 1e100}}),
+    ] {
+        let mut body = json!({"device_id": "mock", "primitive": "hold"});
+        body.as_object_mut()
+            .unwrap()
+            .extend(malformed_field.as_object().unwrap().clone());
+        assert_invalid_goal(post_task(&app, body).await).await;
+    }
+    assert!(app.bridge.commands().is_empty());
+}

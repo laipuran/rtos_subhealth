@@ -373,7 +373,10 @@ fn optional_f32(
         .map(|value| {
             value
                 .as_f64()
-                .map(|value| value as f32)
+                .and_then(|value| {
+                    let value = value as f32;
+                    value.is_finite().then_some(value)
+                })
                 .ok_or_else(|| invalid_goal(format!("{field} must be a number")))
         })
         .transpose()
