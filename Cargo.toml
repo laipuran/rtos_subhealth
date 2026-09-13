@@ -5,6 +5,8 @@ members = [
     "services/diagnosis",
     "services/orchestrator-core",
     "services/device-sdk",
+    "services/world-model",
+    "services/safety",
 ]
 exclude = ["ros2_ws"]
 
