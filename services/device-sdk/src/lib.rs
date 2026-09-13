@@ -5,10 +5,12 @@
 pub mod backend;
 pub mod diff_drive;
 pub mod mock;
+pub mod tonypi;
 
 pub use backend::{BackendStatus, Command, DeviceBackend, Pose2d, Velocity};
 pub use diff_drive::DiffDriveSim;
 pub use mock::MockDevice;
+pub use tonypi::{ActionRunner, TonyPiBackend};
 
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")

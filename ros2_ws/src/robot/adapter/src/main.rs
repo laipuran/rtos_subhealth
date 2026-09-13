@@ -17,6 +17,7 @@ use futures_timer::Delay;
 use rclrs::*;
 
 use device_interfaces::msg::{DeviceDescriptor, DeviceState};
+use device_sdk::tonypi::{ActionRunner, TonyPiBackend};
 use device_sdk::{
     BackendStatus, Command, DeviceBackend, DiffDriveSim, MockDevice, Pose2d, Velocity,
 };
@@ -80,9 +81,96 @@ fn to_command(goal: &DeviceTask_Goal) -> Result<Command> {
     }
 }
 
+/// JSON-RPC action runner for a Hiwonder TonyPi (`:9030`, `RunAction`).
+///
+/// Uses a minimal blocking HTTP/1.1 POST over `std::net::TcpStream` so the
+/// adapter keeps a Rust-1.85-compatible dependency set and needs no TLS (the
+/// robot RPC is plain HTTP on the local network).
+struct HttpActionRunner {
+    host: String,
+    port: u16,
+    path: String,
+}
+
+impl HttpActionRunner {
+    fn from_url(url: &str) -> Result<Self, String> {
+        let rest = url
+            .strip_prefix("http://")
+            .ok_or_else(|| "only http:// URLs are supported".to_string())?;
+        let (authority, path) = match rest.find('/') {
+            Some(i) => (&rest[..i], &rest[i..]),
+            None => (rest, "/"),
+        };
+        let (host, port) = match authority.rsplit_once(':') {
+            Some((h, p)) => (h.to_string(), p.parse::<u16>().map_err(|_| "bad port")?),
+            None => (authority.to_string(), 80),
+        };
+        Ok(Self {
+            host,
+            port,
+            path: path.to_string(),
+        })
+    }
+}
+
+impl ActionRunner for HttpActionRunner {
+    fn run_action(&mut self, action: &str) -> Result<(), String> {
+        use std::io::{Read, Write};
+        use std::net::TcpStream;
+
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "RunAction",
+            "params": [action, 1],
+            "id": 1,
+        })
+        .to_string();
+        let request = format!(
+            "POST {} HTTP/1.1\r\nHost: {}:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            self.path,
+            self.host,
+            self.port,
+            body.len(),
+            body
+        );
+
+        let mut stream = TcpStream::connect((self.host.as_str(), self.port))
+            .map_err(|e| e.to_string())?;
+        stream
+            .write_all(request.as_bytes())
+            .map_err(|e| e.to_string())?;
+        let mut response = String::new();
+        stream
+            .read_to_string(&mut response)
+            .map_err(|e| e.to_string())?;
+
+        let status = response.lines().next().unwrap_or("");
+        if status.contains(" 200 ") || status.contains(" 204 ") {
+            Ok(())
+        } else {
+            Err(format!("RPC failed: {status}"))
+        }
+    }
+}
+
 fn make_backend(device_id: &str, device_type: &str) -> Box<dyn DeviceBackend> {
     match device_type {
         "diff_drive" => Box::new(DiffDriveSim::new(device_id)),
+        "tonypi" => {
+            let url = std::env::var("TONYPI_RPC_URL")
+                .unwrap_or_else(|_| "http://127.0.0.1:9030/".into());
+            match HttpActionRunner::from_url(&url) {
+                Ok(runner) => Box::new(TonyPiBackend::new(device_id, runner)),
+                Err(err) => {
+                    eprintln!("invalid TONYPI_RPC_URL '{url}': {err}");
+                    Box::new(MockDevice::new(
+                        device_id,
+                        &[Primitive::Stop],
+                        1,
+                    ))
+                }
+            }
+        }
         _ => Box::new(MockDevice::new(
             device_id,
             &[
