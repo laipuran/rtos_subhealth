@@ -11,6 +11,7 @@
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Result};
 use futures_timer::Delay;
@@ -22,7 +23,15 @@ use device_sdk::{
     BackendStatus, Command, DeviceBackend, DiffDriveSim, MockDevice, Pose2d, Velocity,
 };
 use orchestrator_core::Primitive;
+use safety::{SafetyLimits, SafetySupervisor};
 use task_interfaces::action::{DeviceTask, DeviceTask_Feedback, DeviceTask_Goal, DeviceTask_Result};
+
+fn now_s() -> f64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0)
+}
 
 fn quat_to_yaw(q: &geometry_msgs::msg::Quaternion) -> f64 {
     let (x, y, z, w) = (q.x as f64, q.y as f64, q.z as f64, q.w as f64);
@@ -211,6 +220,20 @@ fn main() -> Result<()> {
     let backend: Arc<Mutex<Box<dyn DeviceBackend>>> =
         Arc::new(Mutex::new(make_backend(&device_id, &device_type)));
 
+    let limits = {
+        let b = backend.lock().unwrap();
+        let l = &b.descriptor().limits;
+        SafetyLimits {
+            max_speed_mps: l.max_speed_mps as f64,
+            max_yaw_rate_rps: l.max_yaw_rate_rps as f64,
+        }
+    };
+    let watchdog = std::env::var("SAFETY_WATCHDOG_S")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5.0);
+    let safety = Arc::new(Mutex::new(SafetySupervisor::new(limits, watchdog)));
+
     // Descriptor is latched so late-joining orchestrators discover the device.
     let desc_pub = node.create_publisher::<DeviceDescriptor>(
         "/device_descriptors".keep_last(1).transient_local(),
@@ -221,7 +244,9 @@ fn main() -> Result<()> {
     // Periodic state.
     let state_pub = node.create_publisher::<DeviceState>("/device_states")?;
     let state_backend = Arc::clone(&backend);
+    let safety_hb = Arc::clone(&safety);
     let _state_timer = node.create_timer_repeating(Duration::from_millis(100), move || {
+        safety_hb.lock().unwrap().heartbeat(now_s());
         let b = state_backend.lock().unwrap();
         let mut msg = DeviceState::default();
         msg.device_id = b.descriptor().device_id.clone();
@@ -238,13 +263,19 @@ fn main() -> Result<()> {
 
     let action_name = format!("/{device_id}/device_task");
     let action_backend = Arc::clone(&backend);
+    let action_safety = Arc::clone(&safety);
     let _server = node.create_action_server::<DeviceTask, _>(
         ActionServerOptions::new(action_name.as_str()),
         move |requested| {
             let action_backend = Arc::clone(&action_backend);
+            let safety = Arc::clone(&action_safety);
             async move {
                 let goal = requested.goal().clone();
                 let command = match to_command(goal.as_ref()) {
+                    Ok(c) => c,
+                    Err(_) => return requested.reject(),
+                };
+                let command = match safety.lock().unwrap().sanitize(command, now_s()) {
                     Ok(c) => c,
                     Err(_) => return requested.reject(),
                 };
