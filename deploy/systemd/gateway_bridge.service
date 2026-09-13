@@ -6,7 +6,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/gateway_bridge
+ExecStart=/usr/bin/ros-subhealth-run /usr/bin/gateway_bridge
+EnvironmentFile=-/etc/ros/ros-subhealth.env
 EnvironmentFile=-/etc/ros/gateway.env
 LoadCredentialEncrypted=api-token:/etc/ros/api-token.cred
 

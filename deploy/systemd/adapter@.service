@@ -7,11 +7,12 @@ Wants=network-online.target
 [Service]
 Type=simple
 # Device-specific settings, e.g. /etc/ros/adapter-mock.env or adapter-tonypi.env
+EnvironmentFile=-/etc/ros/ros-subhealth.env
 EnvironmentFile=/etc/ros/adapter-%i.env
 EnvironmentFile=-/etc/ros/adapter-%i.env.local
 Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 Environment=ROS_DOMAIN_ID=1
-ExecStart=/usr/bin/adapter
+ExecStart=/usr/bin/ros-subhealth-run /usr/bin/adapter
 Restart=on-failure
 RestartSec=2
 NoNewPrivileges=true

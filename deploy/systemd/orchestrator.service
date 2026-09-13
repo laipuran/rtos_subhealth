@@ -6,10 +6,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+EnvironmentFile=-/etc/ros/ros-subhealth.env
 EnvironmentFile=-/etc/ros/orchestrator.env
 Environment=RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 Environment=ROS_DOMAIN_ID=1
-ExecStart=/usr/bin/orchestrator
+ExecStart=/usr/bin/ros-subhealth-run /usr/bin/orchestrator
 Restart=on-failure
 RestartSec=2
 NoNewPrivileges=true
