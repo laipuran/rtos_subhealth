@@ -60,6 +60,49 @@ fn failed_result(code: &str, message: &str) -> DeviceTask_Result {
     r
 }
 
+fn load_map(path: &str) -> world_model::WorldModel {
+    match std::fs::read_to_string(path) {
+        Ok(json) => match world_model::WorldModel::from_json_str(&json) {
+            Ok(m) => m,
+            Err(err) => {
+                eprintln!("[orchestrator] invalid map {path}: {err}");
+                world_model::WorldModel::default()
+            }
+        },
+        Err(_) => {
+            eprintln!("[orchestrator] map not found: {path}");
+            world_model::WorldModel::default()
+        }
+    }
+}
+
+/// Resolve a `move_to_pose` goal whose target is a tag or waypoint into a pose
+/// using the world model. Non-resolvable targets are returned unchanged and
+/// later rejected by capability/target validation.
+fn resolve_goal_target(goal: &DeviceTask_Goal, map: &world_model::WorldModel) -> DeviceTask_Goal {
+    let mut out = goal.clone();
+    if goal.primitive != "move_to_pose" {
+        return out;
+    }
+    let coords = match goal.target.kind.as_str() {
+        "tag" => map.nodes.get(&goal.target.tag_id).map(|n| (n.x, n.y)),
+        "waypoint" => map
+            .nodes
+            .values()
+            .find(|n| n.name == goal.target.waypoint_id)
+            .map(|n| (n.x, n.y)),
+        _ => None,
+    };
+    if let Some((x, y)) = coords {
+        out.target.kind = "pose".into();
+        out.target.pose.header.frame_id = "map".into();
+        out.target.pose.pose.position.x = x;
+        out.target.pose.pose.position.y = y;
+        out.target.pose.pose.orientation.w = 1.0;
+    }
+    out
+}
+
 fn main() -> Result<()> {
     let context = Context::default_from_env()?;
     let mut executor = context.create_basic_executor();
@@ -68,6 +111,10 @@ fn main() -> Result<()> {
     let orchestrator = Arc::new(Mutex::new(Orchestrator::new(
         orchestrator_core::DeviceRegistry::new(),
     )));
+
+    let map_path =
+        std::env::var("MAP_PATH").unwrap_or_else(|_| "config/maps/default.json".into());
+    let world = Arc::new(load_map(&map_path));
 
     // Discover adapters from their latched descriptors.
     let reg_orch = Arc::clone(&orchestrator);
@@ -87,30 +134,34 @@ fn main() -> Result<()> {
 
     let srv_orch = Arc::clone(&orchestrator);
     let srv_node = Arc::clone(&node);
+    let srv_world = Arc::clone(&world);
     let _server = node.create_action_server::<DeviceTask, _>(
         ActionServerOptions::new("/orchestrator/device_task"),
         move |requested| {
             let orch = Arc::clone(&srv_orch);
             let node = Arc::clone(&srv_node);
+            let world = Arc::clone(&srv_world);
             async move {
                 let goal: Arc<DeviceTask_Goal> = requested.goal().clone();
+                let resolved = resolve_goal_target(goal.as_ref(), world.as_ref());
 
-                let Some(primitive) = Primitive::parse(&goal.primitive) else {
+                let Some(primitive) = Primitive::parse(&resolved.primitive) else {
                     return requested.reject();
                 };
                 let task = Task {
-                    goal_id: goal.goal_id.clone(),
-                    device_id: goal.device_id.clone(),
+                    goal_id: resolved.goal_id.clone(),
+                    device_id: resolved.device_id.clone(),
                     primitive,
-                    target: Some(to_target(&goal.target)),
-                    params_json: (!goal.params_json.is_empty()).then(|| goal.params_json.clone()),
-                    deadline_ms: goal.deadline_ms,
+                    target: Some(to_target(&resolved.target)),
+                    params_json: (!resolved.params_json.is_empty())
+                        .then(|| resolved.params_json.clone()),
+                    deadline_ms: resolved.deadline_ms,
                 };
                 if orch.lock().unwrap().submit(task).is_err() {
                     return requested.reject();
                 }
 
-                let action_name = format!("/{}/device_task", goal.device_id);
+                let action_name = format!("/{}/device_task", resolved.device_id);
                 let client = match node.create_action_client::<DeviceTask>(
                     ActionClientOptions::new(action_name.as_str()),
                 ) {
@@ -118,7 +169,7 @@ fn main() -> Result<()> {
                     Err(_) => {
                         orch.lock()
                             .unwrap()
-                            .complete(&goal.goal_id, TaskOutcome::failed("INTERNAL", "client create failed"));
+                            .complete(&resolved.goal_id, TaskOutcome::failed("INTERNAL", "client create failed"));
                         return requested.reject();
                     }
                 };
@@ -130,7 +181,7 @@ fn main() -> Result<()> {
                 // The client stream is Send but not Sync, so it cannot live in
                 // the (Sync) server future. Run the forwarding on the executor
                 // and bridge the result back through a oneshot channel.
-                let forward_goal = Arc::clone(&goal);
+                let forward_goal = Arc::new(resolved.clone());
                 let _promise = node.commands().run(async move {
                     let goal_client = match client.request_goal((*forward_goal).clone()).await {
                         Some(gc) => gc,
@@ -176,7 +227,7 @@ fn main() -> Result<()> {
                             final_result.message.clone(),
                         )
                     };
-                    o.complete(&goal.goal_id, outcome);
+                    o.complete(&resolved.goal_id, outcome);
                 }
 
                 if succeeded {
