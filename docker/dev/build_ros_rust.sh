@@ -35,7 +35,7 @@ cp -r "$REPO_ROOT"/ros2_ws/src/robot/interfaces/* "$WS/src/"
 
 cd "$WS"
 colcon build --merge-install --packages-up-to \
-  rosidl_generator_rs geometry_msgs \
+  rosidl_generator_rs geometry_msgs sensor_msgs \
   device_interfaces task_interfaces perception_interfaces diagnosis_interfaces
 
 # shellcheck disable=SC1091
@@ -53,6 +53,7 @@ colcon build --merge-install \
     "$REPO_ROOT/ros2_ws/src/robot/physio_mock" \
     "$REPO_ROOT/ros2_ws/src/robot/diagnosis_node" \
     "$REPO_ROOT/ros2_ws/src/robot/perception_sim" \
+    "$REPO_ROOT/ros2_ws/src/robot/perception_camera" \
     "$REPO_ROOT/ros2_ws/src/robot/gateway_bridge" \
   --build-base "$WS/build_nodes" --install-base "$WS/install_nodes"
 
