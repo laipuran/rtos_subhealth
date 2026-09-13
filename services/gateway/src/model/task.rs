@@ -5,6 +5,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use crate::error::{ApiError, ErrorCode};
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Constraints {
     pub max_speed_mps: f32,
@@ -92,6 +94,116 @@ pub struct Goal {
 }
 
 impl Goal {
+    pub fn from_canonical_value(value: &Value) -> Result<Self, ApiError> {
+        let device_id = required_string(value, "device_id")?;
+        let primitive = required_string(value, "primitive")?;
+        let target = value
+            .get("target")
+            .filter(|target| !target.is_null())
+            .map(TaskTarget::from_value);
+        if primitive == "move_to_pose"
+            && !matches!(target.as_ref(), Some(target) if target.kind == "tag" && target.tag_id != 0)
+        {
+            return Err(ApiError::new(
+                ErrorCode::InvalidGoal,
+                "move_to_pose requires target.kind 'tag' with a non-zero tag_id",
+            ));
+        }
+        let constraints = constraints_from_value(value);
+        let deadline_ms = value
+            .get("deadline_ms")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
+        let params_json = value
+            .get("params_json")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+
+        Ok(Self {
+            type_: primitive.clone(),
+            priority: 0,
+            route_id: String::new(),
+            target_tags: target
+                .iter()
+                .map(|item| item.tag_id)
+                .filter(|id| *id != 0)
+                .collect(),
+            constraints,
+            deadline_ms,
+            device_id,
+            primitive,
+            target,
+            params_json,
+        })
+    }
+
+    pub fn from_legacy_value(value: &Value) -> Result<Self, ApiError> {
+        let device_id = required_string(value, "target_device")?;
+        let goal = value
+            .get("goal")
+            .ok_or_else(|| ApiError::new(ErrorCode::InvalidGoal, "missing goal"))?;
+        let type_ = required_string(goal, "type")?;
+        match type_.as_str() {
+            "go_to_tag" => {
+                let tags = goal
+                    .get("target_tags")
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| {
+                        ApiError::new(ErrorCode::InvalidGoal, "go_to_tag requires one integer tag")
+                    })?;
+                if tags.len() != 1 {
+                    return Err(ApiError::new(
+                        ErrorCode::InvalidGoal,
+                        "go_to_tag requires exactly one integer tag",
+                    ));
+                }
+                let tag_id = tags[0].as_i64().filter(|id| *id != 0).ok_or_else(|| {
+                    ApiError::new(
+                        ErrorCode::InvalidGoal,
+                        "go_to_tag requires one non-zero integer tag",
+                    )
+                })? as i32;
+                Ok(Self {
+                    type_: "move_to_pose".to_string(),
+                    priority: 0,
+                    route_id: String::new(),
+                    target_tags: vec![tag_id],
+                    constraints: constraints_from_value(goal),
+                    deadline_ms: goal.get("deadline_ms").and_then(Value::as_i64).unwrap_or(0),
+                    device_id,
+                    primitive: "move_to_pose".to_string(),
+                    target: Some(TaskTarget {
+                        kind: "tag".to_string(),
+                        tag_id,
+                        ..Default::default()
+                    }),
+                    params_json: String::new(),
+                })
+            }
+            "hold" => Ok(Self {
+                type_: "hold".to_string(),
+                priority: 0,
+                route_id: String::new(),
+                target_tags: Vec::new(),
+                constraints: constraints_from_value(goal),
+                deadline_ms: goal.get("deadline_ms").and_then(Value::as_i64).unwrap_or(0),
+                device_id,
+                primitive: "hold".to_string(),
+                target: None,
+                params_json: String::new(),
+            }),
+            "patrol_route" => Err(ApiError::new(
+                ErrorCode::InvalidGoal,
+                "patrol_route is not supported",
+            )),
+            _ => Err(ApiError::new(
+                ErrorCode::InvalidGoal,
+                "unknown legacy goal type",
+            )),
+        }
+    }
+
     pub fn new(type_: impl Into<String>) -> Self {
         Self {
             type_: type_.into(),
@@ -233,6 +345,39 @@ impl Goal {
                 .unwrap_or("")
                 .to_string(),
         })
+    }
+}
+
+fn required_string(value: &Value, field: &str) -> Result<String, ApiError> {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| ApiError::new(ErrorCode::InvalidGoal, format!("missing {field}")))
+}
+
+fn constraints_from_value(value: &Value) -> Constraints {
+    let constraints = value.get("constraints").cloned().unwrap_or(Value::Null);
+    Constraints {
+        max_speed_mps: constraints
+            .get("max_speed_mps")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0) as f32,
+        min_clearance_m: constraints
+            .get("min_clearance_m")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0) as f32,
+        avoid_tags: constraints
+            .get("avoid_tags")
+            .and_then(Value::as_array)
+            .map(|tags| {
+                tags.iter()
+                    .filter_map(Value::as_i64)
+                    .map(|tag| tag as i32)
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
 }
 

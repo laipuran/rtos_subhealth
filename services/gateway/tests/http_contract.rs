@@ -5,6 +5,7 @@ use axum::http::{header, HeaderMap, Request, StatusCode};
 use axum::Router;
 use gateway::app::{build_router, AppState};
 use gateway::bridge::mock::MockBridge;
+use gateway::bridge::BridgeCommand;
 use gateway::config::Config;
 use gateway::model::task::TaskUpdate;
 use gateway::store::task_store::TaskStore;
@@ -68,6 +69,22 @@ fn post_json(uri: &str, body: &str) -> Request<Body> {
         .unwrap()
 }
 
+async fn post_task(app: &TestApp, body: Value) -> (StatusCode, Value, HeaderMap) {
+    send(&app.router, post_json("/api/v1/tasks", &body.to_string())).await
+}
+
+async fn assert_invalid_goal(response: (StatusCode, Value, HeaderMap)) {
+    assert_eq!(response.0, StatusCode::BAD_REQUEST);
+    assert_eq!(response.1["error"]["code"], "INVALID_GOAL");
+}
+
+fn dispatched_goal(app: &TestApp) -> gateway::model::task::Goal {
+    match app.bridge.commands().pop().unwrap() {
+        BridgeCommand::SendGoal { goal, .. } => *goal,
+        command => panic!("expected SendGoal, got {command:?}"),
+    }
+}
+
 fn get(uri: &str) -> Request<Body> {
     Request::builder()
         .method("GET")
@@ -79,12 +96,13 @@ fn get(uri: &str) -> Request<Body> {
 #[tokio::test]
 async fn create_task_returns_201_and_dispatches_to_bridge() {
     let app = test_app("");
-    let body = json!({"goal": {"type": "go_to_tag", "target_tags": [42]}}).to_string();
+    let body = json!({"target_device": "mock", "goal": {"type": "go_to_tag", "target_tags": [42]}})
+        .to_string();
     let (status, body, headers) = send(&app.router, post_json("/api/v1/tasks", &body)).await;
 
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["status"], "accepted");
-    assert_eq!(body["type"], "go_to_tag");
+    assert_eq!(body["type"], "move_to_pose");
     assert!(!body["task_id"].as_str().unwrap().is_empty());
     assert!(body["trace_id"].is_string());
     assert_eq!(
@@ -105,7 +123,7 @@ async fn invalid_json_returns_invalid_json() {
 #[tokio::test]
 async fn invalid_goal_type_returns_invalid_goal() {
     let app = test_app("");
-    let body = json!({"goal": {"type": "teleport"}}).to_string();
+    let body = json!({"target_device": "mock", "goal": {"type": "teleport"}}).to_string();
     let (status, body, _) = send(&app.router, post_json("/api/v1/tasks", &body)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"]["code"], "INVALID_GOAL");
@@ -115,7 +133,7 @@ async fn invalid_goal_type_returns_invalid_goal() {
 async fn list_tasks_returns_pagination() {
     let app = test_app("");
     for _ in 0..3 {
-        let body = json!({"goal": {"type": "hold"}}).to_string();
+        let body = json!({"target_device": "mock", "goal": {"type": "hold"}}).to_string();
         let _ = send(&app.router, post_json("/api/v1/tasks", &body)).await;
     }
     let (status, body, _) = send(&app.router, get("/api/v1/tasks?offset=0&limit=2")).await;
@@ -145,7 +163,8 @@ async fn get_unknown_task_returns_404() {
 #[tokio::test]
 async fn cancel_final_task_returns_invalid_state() {
     let app = test_app("");
-    let body = json!({"goal": {"type": "hold"}, "goal_id": "T-9"}).to_string();
+    let body =
+        json!({"target_device": "mock", "goal": {"type": "hold"}, "goal_id": "T-9"}).to_string();
     send(&app.router, post_json("/api/v1/tasks", &body)).await;
     app.tasks
         .update(
@@ -227,4 +246,60 @@ async fn invalid_device_primitive_returns_invalid_goal() {
     let (status, body, _) = send(&app.router, post_json("/api/v1/tasks", &body)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"]["code"], "INVALID_GOAL");
+}
+
+#[tokio::test]
+async fn canonical_navigation_dispatches_tag_target() {
+    let app = test_app("");
+    let body = json!({
+        "device_id": "mock",
+        "primitive": "move_to_pose",
+        "target": {"kind": "tag", "tag_id": 12},
+        "params_json": "{}",
+        "constraints": {"max_speed_mps": 0.0, "min_clearance_m": 0.0, "avoid_tags": []},
+        "deadline_ms": 0
+    });
+    let response = post_task(&app, body).await;
+    assert_eq!(response.0, StatusCode::CREATED);
+    let sent = dispatched_goal(&app);
+    assert_eq!(sent.primitive, "move_to_pose");
+    assert_eq!(sent.target.unwrap().tag_id, 12);
+}
+
+#[tokio::test]
+async fn canonical_task_requires_device_and_primitive() {
+    let app = test_app("");
+    assert_invalid_goal(post_task(&app, json!({"primitive": "hold"})).await).await;
+    assert_invalid_goal(post_task(&app, json!({"device_id": "mock"})).await).await;
+}
+
+#[tokio::test]
+async fn legacy_go_to_tag_becomes_move_to_pose() {
+    let app = test_app("");
+    let response = post_task(
+        &app,
+        json!({
+            "target_device": "mock",
+            "goal": {"type": "go_to_tag", "target_tags": [7]}
+        }),
+    )
+    .await;
+    assert_eq!(response.0, StatusCode::CREATED);
+    let sent = dispatched_goal(&app);
+    assert_eq!(sent.primitive, "move_to_pose");
+    assert_eq!(sent.target.unwrap().kind, "tag");
+}
+
+#[tokio::test]
+async fn legacy_navigation_with_multiple_tags_is_rejected() {
+    let app = test_app("");
+    let response = post_task(
+        &app,
+        json!({
+            "target_device": "mock",
+            "goal": {"type": "go_to_tag", "target_tags": [7, 8]}
+        }),
+    )
+    .await;
+    assert_invalid_goal(response).await;
 }

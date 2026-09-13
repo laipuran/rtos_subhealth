@@ -20,7 +20,6 @@ use crate::app::AppState;
 use crate::error::{ApiError, ErrorCode};
 use crate::model::task::{Goal, TaskRecord};
 
-const VALID_TYPES: [&str; 3] = ["go_to_tag", "patrol_route", "hold"];
 const VALID_PRIMITIVES: [&str; 5] = [
     "move_to_pose",
     "set_velocity",
@@ -57,61 +56,29 @@ async fn create_task(State(state): State<AppState>, headers: HeaderMap, body: By
             )
         }
     };
-    let mut goal = if let Some(goal_value) = value.get("goal") {
-        match goal_value.get("type").and_then(Value::as_str) {
-            None => {
-                return error_response(
-                    &ApiError::new(ErrorCode::InvalidGoal, "missing goal.type"),
-                    &tid,
-                )
-            }
-            Some(t) if !VALID_TYPES.contains(&t) => {
-                return error_response(
-                    &ApiError::new(
-                        ErrorCode::InvalidGoal,
-                        format!("type must be one of {VALID_TYPES:?}"),
-                    ),
-                    &tid,
-                )
-            }
-            Some(_) => {}
+    let goal = if value.get("goal").is_some() {
+        match Goal::from_legacy_value(&value) {
+            Ok(goal) => goal,
+            Err(error) => return error_response(&error, &tid),
         }
-        Goal::from_body_value(goal_value).expect("type validated above")
     } else {
-        match Goal::from_task_value(&value) {
-            Some(g) if VALID_PRIMITIVES.contains(&g.primitive.as_str()) => g,
-            Some(g) => {
+        match Goal::from_canonical_value(&value) {
+            Ok(goal) if VALID_PRIMITIVES.contains(&goal.primitive.as_str()) => goal,
+            Ok(goal) => {
                 return error_response(
                     &ApiError::new(
                         ErrorCode::InvalidGoal,
                         format!(
                             "primitive '{}' must be one of {VALID_PRIMITIVES:?}",
-                            g.primitive
+                            goal.primitive
                         ),
                     ),
                     &tid,
                 )
             }
-            None => {
-                return error_response(
-                    &ApiError::new(
-                        ErrorCode::InvalidGoal,
-                        "missing goal field (legacy) or primitive (device task)",
-                    ),
-                    &tid,
-                )
-            }
+            Err(error) => return error_response(&error, &tid),
         }
     };
-    if goal.device_id.is_empty() {
-        if let Some(device) = value
-            .get("target_device")
-            .and_then(Value::as_str)
-            .filter(|s| !s.is_empty())
-        {
-            goal.device_id = device.to_string();
-        }
-    }
 
     let goal_id = value
         .get("goal_id")
