@@ -1,0 +1,3 @@
+builtin_interfaces/Time timestamp
+string frame_id
+perception_interfaces/AprilTagDetection[] detections

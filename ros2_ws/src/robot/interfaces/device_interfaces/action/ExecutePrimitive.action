@@ -1,0 +1,19 @@
+# Generic escape hatch for device-specific primitives (e.g. a servo humanoid's
+# named action groups). `params_json` is a primitive-specific JSON object so new
+# devices do not require new ROS messages.
+# Goal
+string goal_id
+string primitive      # e.g. action_group, stand_up, play_gait
+string params_json    # JSON object, e.g. {"action": "wave", "repeat": 2}
+int64 deadline_ms
+---
+# Result
+string final_state
+string error_code
+string message
+---
+# Feedback
+string state
+float32 progress
+string error_code
+string message
