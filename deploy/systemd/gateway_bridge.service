@@ -1,0 +1,26 @@
+[Unit]
+Description=ROS Subhealth gateway (HTTP/WS + ROS bridge)
+Documentation=https://github.com/laipuran/rtos_subhealth
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/gateway_bridge
+EnvironmentFile=-/etc/ros/gateway.env
+LoadCredentialEncrypted=api-token:/etc/ros/api-token.cred
+
+StateDirectory=ros
+LogsDirectory=ros
+RuntimeDirectory=ros
+
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/ros /var/log/ros
+
+[Install]
+WantedBy=multi-user.target

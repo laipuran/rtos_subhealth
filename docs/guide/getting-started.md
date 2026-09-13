@@ -1,3 +1,5 @@
+> **[已过时 / Superseded]** 本文档描述旧的 Python / ROS 2 Foxy 实现，已被 Rust-first / ROS 2 Jazzy 架构取代。当前架构见 `docs/tech/tech-current-architecture.md` 与 `README.md`；语言范围与设备契约见 `docs/tech/adr-001-language-scope.md`、`docs/tech/adr-002-device-contract.md`。旧实现保留在 `legacy/`，仅作参考。
+
 # 操作手册
 
 > Arch / 无法直接安装 ROS2 Foxy 时，可用 Docker 方案，见 [附录：Arch + Docker 编译](#附录arch--docker-编译)。

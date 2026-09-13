@@ -37,9 +37,16 @@ services/gateway/     Rust HTTP/WS gateway (replaces desc_layer)
 services/diagnosis/   Rust aggregation + anomaly + RAG + LLM core
 services/orchestrator-core/  Rust task routing + device registry (pure logic)
 services/device-sdk/  Rust adapter contract + mock / diff-drive / TonyPi backends
-ros2_ws/src/robot/interfaces/  ROS 2 interfaces (no prefix)
-ros2_ws/src/robot/adapter/     rclrs device adapter node (mock / diff_drive / tonypi)
-ros2_ws/src/robot/orchestrator/  rclrs orchestrator node (discovery + routing)
+services/world-model/ Rust graph map loader + Dijkstra planner
+services/safety/      Rust velocity limits, watchdog, emergency stop
+services/perception-sim/  Rust geometry AprilTag detector
+ros2_ws/src/robot/interfaces/     ROS 2 interfaces (no prefix)
+ros2_ws/src/robot/adapter/        rclrs device adapter (mock / diff_drive / tonypi)
+ros2_ws/src/robot/orchestrator/   rclrs orchestrator (discovery + routing)
+ros2_ws/src/robot/gateway_bridge/ gateway HTTP/WS + ROS bridge
+ros2_ws/src/robot/diagnosis_node/ diagnosis ROS node
+ros2_ws/src/robot/physio_mock/    mock physiological sensors
+ros2_ws/src/robot/perception_sim/ simulated AprilTag node
 webui/                React + Vite UI (served by the gateway)
 deploy/               debian, systemd, apt, rauc, config, spikes
 docker/dev/           pinned Jazzy + Rust dev image
@@ -85,19 +92,24 @@ docker run --rm -v "$PWD":/workspace -w /workspace ros-dev:jazzy \
 | rclrs adapter node (mock / diff_drive / tonypi, `DeviceTask` action) | builds in Jazzy container; mock + TonyPi paths verified end-to-end |
 | rclrs orchestrator node (discovery + routing) | builds; mock and TonyPi vertical slices verified end-to-end |
 | TonyPi backend (JSON-RPC `RunAction`) | implemented + tested (`services/device-sdk/src/tonypi.rs`) |
+| World model + Dijkstra planner | implemented + tested (`services/world-model`) |
+| Safety supervisor (limits/watchdog/estop) | implemented + tested (`services/safety`) |
+| Physio mock + diagnosis ROS nodes | built; anomaly result verified end-to-end |
+| Perception: simulated AprilTag detector + node | built; detection verified end-to-end |
+| Gateway ↔ orchestrator bridge (`gateway_bridge`) | built; full HTTP → adapter → result verified |
 | GO2 DDS spike (optional, deferred) | runbook ready (`deploy/spikes/go2_lowcmd_probe.md`) |
-| Perception (AprilTag) Rust port | next |
-| Planner / WorldModel (tag/waypoint/pose providers) | next |
-| Safety supervisor (limits / watchdog / estop) | next |
-| Deployment (deb/apt/systemd/RAUC) | systemd units added; deb/apt/RAUC scaffolded |
+| Real camera / OpenCV AprilTag detection | next |
+| Tag/pose/waypoint planner provider wired into orchestrator | next |
+| Full deb/apt/RAUC packaging for ROS nodes | next |
 | Retired legacy Python packages | moved to `legacy/` (out of the build tree) |
 
 ## Documentation
 
+- Current architecture (authoritative): `docs/tech/tech-current-architecture.md`
 - Language scope: `docs/tech/adr-001-language-scope.md`
 - Device contract: `docs/tech/adr-002-device-contract.md`
 - Design spec: `docs/superpowers/specs/2026-09-13-rust-ros2-jazzy-rearchitecture-design.md`
 - Implementation plan: `docs/superpowers/plans/2026-09-13-rust-ros2-jazzy-rearchitecture.md`
 - Platform research: `docs/tech/tech-platform-migration-research.md`
 - TonyPi recon: `deploy/spikes/tonypi_interface.md`
-- RFCs: `docs/rfc/`
+- RFCs: `docs/rfc/` (older RFCs carry a "superseded" banner)

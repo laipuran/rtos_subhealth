@@ -27,7 +27,7 @@ impl RosBridge for ChannelBridge {
     fn send_goal(&self, goal_id: &str, goal: Goal) {
         let _ = self.tx.send(BridgeCommand::SendGoal {
             goal_id: goal_id.to_string(),
-            goal,
+            goal: Box::new(goal),
         });
     }
 
@@ -95,7 +95,7 @@ fn ros_main(
                     let client = client.clone();
                     let hub = hub.clone();
                     let tasks = Arc::clone(&tasks);
-                    let forward = to_device_task_goal(&goal_id, &goal);
+                    let forward = to_device_task_goal(&goal_id, goal.as_ref());
                     let _ = commands.run(async move {
                         let Some(goal_client) = client.request_goal(forward).await else {
                             let _ = tasks.update(

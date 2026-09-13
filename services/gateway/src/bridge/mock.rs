@@ -27,7 +27,7 @@ impl RosBridge for MockBridge {
     fn send_goal(&self, goal_id: &str, goal: Goal) {
         self.commands.lock().unwrap().push(BridgeCommand::SendGoal {
             goal_id: goal_id.to_string(),
-            goal,
+            goal: Box::new(goal),
         });
     }
 

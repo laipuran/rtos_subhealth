@@ -1,3 +1,5 @@
+> **[已过时 / Superseded]** 本文档描述旧的 Python / ROS 2 Foxy 实现，已被 Rust-first / ROS 2 Jazzy 架构取代。当前架构见 `docs/tech/tech-current-architecture.md` 与 `README.md`；语言范围与设备契约见 `docs/tech/adr-001-language-scope.md`、`docs/tech/adr-002-device-contract.md`。旧实现保留在 `legacy/`，仅作参考。
+
 ## RFC 004: 决策层到执行层的规划字段说明
 
 **状态：** 草案

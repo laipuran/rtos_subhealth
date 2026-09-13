@@ -12,7 +12,7 @@ use crate::model::task::Goal;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BridgeCommand {
-    SendGoal { goal_id: String, goal: Goal },
+    SendGoal { goal_id: String, goal: Box<Goal> },
     Cancel { goal_id: String },
     TriggerDiagnosis { diagnosis_id: String },
 }
