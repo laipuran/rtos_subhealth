@@ -1,20 +1,23 @@
 # Legacy (retired) implementation
 
-This directory holds the original Python / ROS 2 Foxy implementation, kept for
-reference only. It is outside the build tree (`ros2_ws/src/`) and is not built
-by colcon, CI or the deploy tooling.
+The original Python / ROS 2 Foxy implementation has been **removed from the
+tree** now that the Rust-first architecture replaces it. The code is still
+available in git history (it was deleted in a commit on
+`feat.duckran.migration`).
 
-It is superseded by:
+This file is retained as historical documentation of what was replaced.
 
 | Legacy | Replacement |
 |---|---|
-| `ros2_ws/src/orchestration/desc_layer` (Flask) | `services/gateway` (Rust/axum) |
-| `ros2_ws/src/orchestration/diagnosis_layer` (Python) | `services/diagnosis` (Rust) |
-| `ros2_ws/src/orchestration/exec_layer` (FSM + planner) | `ros2_ws/src/robot/orchestrator` + adapters |
-| `ros2_ws/src/orchestration/mock_exec_layer` | `ros2_ws/src/robot/adapter` (`DEVICE_TYPE=mock`) |
-| `ros2_ws/src/orchestration/physio_mock_publisher` | not yet ported (planned) |
-| `ros2_ws/src/perception/apriltag_perception` | not yet ported (planned) |
-| `ros2_ws/config-params`, `run.sh`, `setup.sh`, `Makefile` | `deploy/`, `docker/`, systemd |
-| `map_to_mjmodel.py`, `test/` | not yet ported (simulation) |
+| `desc_layer` (Flask HTTP/WS + SQLite) | `services/gateway` + `ros2_ws/src/robot/gateway_bridge` |
+| `diagnosis_layer` (Python aggregation/RAG/LLM) | `services/diagnosis` + `ros2_ws/src/robot/diagnosis_node` |
+| `exec_layer` (FSM + planner + robot backends) | `services/orchestrator-core`, `services/world-model`, `ros2_ws/src/robot/orchestrator`, `ros2_ws/src/robot/adapter` |
+| `mock_exec_layer` | `ros2_ws/src/robot/adapter` (`DEVICE_TYPE=mock`) |
+| `physio_mock_publisher` | `ros2_ws/src/robot/physio_mock` |
+| `apriltag_perception` / `camera_test_publisher` | `ros2_ws/src/robot/perception_sim` (sim) and `perception_camera` (real) |
+| `ros_interfaces` / `apriltag_interfaces` / `physio_interfaces` | `ros2_ws/src/robot/interfaces/*` |
+| `run.sh`, `setup.sh`, `Makefile`, `config-params` | `deploy/`, `docker/`, systemd units |
+| `map_to_mjmodel.py`, `test/*` | not ported; simulation is not on the critical path |
 
-No new work should target this directory.
+See `docs/tech/adr-001-language-scope.md` and
+`docs/tech/tech-current-architecture.md` for the current design.
