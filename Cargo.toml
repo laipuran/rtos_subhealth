@@ -7,6 +7,7 @@ members = [
     "services/device-sdk",
     "services/world-model",
     "services/safety",
+    "services/perception-sim",
 ]
 exclude = ["ros2_ws"]
 
