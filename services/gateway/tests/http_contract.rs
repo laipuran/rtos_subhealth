@@ -93,6 +93,29 @@ fn get(uri: &str) -> Request<Body> {
         .unwrap()
 }
 
+async fn get_map(app: &TestApp, scene: &str) -> (StatusCode, Value, HeaderMap) {
+    send(&app.router, get(&format!("/api/v1/map?scene={scene}"))).await
+}
+
+async fn put_map(app: &TestApp, scene: &str, map: Value) -> (StatusCode, Value, HeaderMap) {
+    let request = Request::builder()
+        .method("PUT")
+        .uri(format!("/api/v1/map?scene={scene}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(map.to_string()))
+        .unwrap();
+    send(&app.router, request).await
+}
+
+fn valid_map() -> Value {
+    json!({"tags": {}, "edges": [], "routes": {}})
+}
+
+async fn assert_invalid_param(response: (StatusCode, Value, HeaderMap)) {
+    assert_eq!(response.0, StatusCode::BAD_REQUEST);
+    assert_eq!(response.1["error"]["code"], "INVALID_PARAM");
+}
+
 #[tokio::test]
 async fn create_task_returns_201_and_dispatches_to_bridge() {
     let app = test_app("");
@@ -196,6 +219,21 @@ async fn map_supports_etag_and_304() {
     let (status, body, _) = send(&app.router, req).await;
     assert_eq!(status, StatusCode::NOT_MODIFIED);
     assert!(body.is_null());
+}
+
+#[tokio::test]
+async fn map_scene_rejects_traversal_for_reads_and_writes() {
+    let app = test_app("");
+    assert_invalid_param(get_map(&app, "../tasks").await).await;
+    assert_invalid_param(put_map(&app, "../../outside", valid_map()).await).await;
+}
+
+#[tokio::test]
+async fn map_scene_accepts_a_valid_named_scene() {
+    let app = test_app("");
+    let response = put_map(&app, "ward_2-night", valid_map()).await;
+    assert_eq!(response.0, StatusCode::OK);
+    assert!(app._dir.path().join("maps/ward_2-night.json").exists());
 }
 
 #[tokio::test]

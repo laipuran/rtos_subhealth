@@ -2,7 +2,8 @@
 //! `trace_id` and `X-API-Key` auth all match the legacy Flask implementation.
 
 use std::collections::{BTreeSet, HashMap};
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path as FsPath, PathBuf};
 
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
@@ -201,7 +202,10 @@ async fn get_map(
         return resp;
     }
     let scene = query.get("scene").map(String::as_str).unwrap_or("default");
-    let path = state.config.maps_dir.join(format!("{scene}.json"));
+    let path = match scene_path(&state.config.maps_dir, scene) {
+        Ok(path) => path,
+        Err(error) => return error_response(&error, &tid),
+    };
     let bytes = match std::fs::read(&path) {
         Ok(b) => b,
         Err(_) => {
@@ -242,6 +246,10 @@ async fn put_map(
         return resp;
     }
     let scene = query.get("scene").map(String::as_str).unwrap_or("default");
+    let path = match scene_path(&state.config.maps_dir, scene) {
+        Ok(path) => path,
+        Err(error) => return error_response(&error, &tid),
+    };
     let new: Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
         Err(_) => {
@@ -251,7 +259,6 @@ async fn put_map(
             )
         }
     };
-    let path = state.config.maps_dir.join(format!("{scene}.json"));
     let old: Option<Value> = std::fs::read(&path)
         .ok()
         .and_then(|b| serde_json::from_slice(&b).ok());
@@ -268,7 +275,7 @@ async fn put_map(
             );
         }
     }
-    if let Err(e) = std::fs::write(&path, serde_json::to_vec_pretty(&new).unwrap()) {
+    if let Err(e) = atomic_write_json(&path, &new) {
         return error_response(&ApiError::new(ErrorCode::Internal, e.to_string()), &tid);
     }
     let etag = std::fs::read(&path)
@@ -279,6 +286,43 @@ async fn put_map(
         resp.headers_mut().insert(name, value);
     }
     resp
+}
+
+fn scene_path(maps_dir: &FsPath, scene: &str) -> Result<PathBuf, ApiError> {
+    let bytes = scene.as_bytes();
+    let valid = bytes.len() <= 64
+        && matches!(bytes.first(), Some(first) if first.is_ascii_alphanumeric())
+        && bytes[1..]
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'));
+    if !valid {
+        return Err(ApiError::new(
+            ErrorCode::InvalidParam,
+            "scene must match [A-Za-z0-9][A-Za-z0-9_-]{0,63}",
+        ));
+    }
+    Ok(maps_dir.join(format!("{scene}.json")))
+}
+
+fn atomic_write_json(path: &FsPath, value: &Value) -> std::io::Result<()> {
+    let bytes = serde_json::to_vec_pretty(value).map_err(std::io::Error::other)?;
+    let parent = path.parent().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "map path has no parent")
+    })?;
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("map");
+    let temporary = parent.join(format!(".{name}.{}", uuid::Uuid::new_v4()));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)?;
+    file.write_all(&bytes)?;
+    file.sync_all()?;
+    std::fs::rename(&temporary, path)?;
+    let _ = std::fs::File::open(parent).and_then(|directory| directory.sync_all());
+    Ok(())
 }
 
 async fn trigger_diagnosis(State(state): State<AppState>, headers: HeaderMap) -> Response {
