@@ -964,6 +964,10 @@ name = "rosgraph_msgs"
 version = "2.0.4"
 
 [[patch.unused]]
+name = "sensor_msgs"
+version = "5.3.8"
+
+[[patch.unused]]
 name = "shape_msgs"
 version = "5.3.8"
 

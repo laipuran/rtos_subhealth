@@ -47,6 +47,7 @@ ros2_ws/src/robot/gateway_bridge/ gateway HTTP/WS + ROS bridge
 ros2_ws/src/robot/diagnosis_node/ diagnosis ROS node
 ros2_ws/src/robot/physio_mock/    mock physiological sensors
 ros2_ws/src/robot/perception_sim/ simulated AprilTag node
+ros2_ws/src/robot/perception_camera/ real camera AprilTag (tag36h11) node
 webui/                React + Vite UI (served by the gateway)
 deploy/               debian, systemd, apt, rauc, config, spikes
 docker/dev/           pinned Jazzy + Rust dev image
@@ -97,10 +98,11 @@ docker run --rm -v "$PWD":/workspace -w /workspace ros-dev:jazzy \
 | Physio mock + diagnosis ROS nodes | built; anomaly result verified end-to-end |
 | Perception: simulated AprilTag detector + node | built; detection verified end-to-end |
 | Gateway ↔ orchestrator bridge (`gateway_bridge`) | built; full HTTP → adapter → result verified |
+| World-model planner wired into orchestrator | tag/waypoint → pose resolution verified (`diff_drive`) |
+| Real camera AprilTag (tag36h11) | built; detection verified with a generated marker |
+| Debian package (`ros-subhealth-nodes`) | built; nodes start from the packaged prefix |
 | GO2 DDS spike (optional, deferred) | runbook ready (`deploy/spikes/go2_lowcmd_probe.md`) |
-| Real camera / OpenCV AprilTag detection | next |
-| Tag/pose/waypoint planner provider wired into orchestrator | next |
-| Full deb/apt/RAUC packaging for ROS nodes | next |
+| Hardware validation | runbooks ready: `deploy/spikes/{tonypi,perception_camera}_*.md` |
 | Retired legacy Python packages | moved to `legacy/` (out of the build tree) |
 
 ## Documentation

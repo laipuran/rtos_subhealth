@@ -30,7 +30,8 @@ edge adapters and tooling. See `docs/tech/adr-001-language-scope.md`.
 | Adapter node | `ros2_ws/src/robot/adapter` | `DEVICE_TYPE=mock|diff_drive|tonypi` |
 | World model / planner | `services/world-model` | graph + Dijkstra |
 | Safety | `services/safety` | limits, watchdog, e-stop |
-| Perception | `services/perception-sim` + `ros2_ws/src/robot/perception_sim` | geometry AprilTag detection |
+| Perception | `services/perception-sim` + `ros2_ws/src/robot/perception_sim` (sim) / `perception_camera` (real tag36h11) | geometry sim + real camera |
+| Orchestrator target resolution | `services/world-model` used inside the orchestrator | tag/waypoint -> pose |
 | WebUI | `webui/` | served by the gateway |
 
 ## Interfaces (rosidl, no prefix)
@@ -49,7 +50,8 @@ WebUI --HTTP/WS--> gateway(gateway_bridge)
                         ^                                            |
                         +------------- feedback / result ------------+
 physio_mock --/physio/*--> diagnosis_node --/diagnosis/*--> gateway
-perception_sim --/perception/apriltag_detections--> (control)
+perception_sim / perception_camera --/perception/apriltag_detections--> (control)
+orchestrator resolves tag/waypoint targets to poses via the world model (MAP_PATH)
 ```
 
 ## Build & run
