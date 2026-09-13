@@ -1,413 +1,228 @@
-> **[已过时 / Superseded]** 本文档描述旧的 Python / ROS 2 Foxy 实现，已被 Rust-first / ROS 2 Jazzy 架构取代。当前架构见 `docs/tech/tech-current-architecture.md` 与 `README.md`；语言范围与设备契约见 `docs/tech/adr-001-language-scope.md`、`docs/tech/adr-002-device-contract.md`。旧实现保留在 `legacy/`，仅作参考。
-
 # 操作手册
 
-> Arch / 无法直接安装 ROS2 Foxy 时，可用 Docker 方案，见 [附录：Arch + Docker 编译](#附录arch--docker-编译)。
+> 本仓库已迁移到 **Rust + ROS 2 Jazzy**。旧的 Python / ROS 2 Foxy 实现
+> （`desc_layer`、`exec_layer`、`mock_exec_layer`、`planner` 等）已退役并移入
+> `legacy/`，仅作参考，不再构建或运行。
+>
+> 所有日常任务都封装在根目录 `Makefile` 里。先看一眼：
+
+```bash
+make help
+```
+
+---
 
 ## 1. 环境要求
 
-| 组件 | 版本 |
+| 组件 | 说明 |
 | --- | --- |
-| Ubuntu | 20.04 |
-| ROS2 | Foxy |
-| Python | 3.8+ |
-| Node.js | 18+ |
-| pnpm | 9+ |
-| gcc/g++ | 9.4+（编译 ROS2 接口包需要） |
+| Docker + Docker Compose | ROS / Rust 工具链全部在容器内，host 不安装 ROS |
+| VS Code + [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) 扩展 | 推荐；容器内自带 rust-analyzer |
+| Rust 1.85（可选，host） | 只跑纯 Rust 服务测试时需要 |
+| Node.js 20+ / pnpm 9（可选，host） | 构建 WebUI 时需要 |
 
-### Python 依赖
+`make` 会检测自己是否在容器内：`ros`、`deb`、`run-stack`、`shell` 等目标在
+host 上执行时会自动通过 `docker compose` 进入 `ros-dev:jazzy` 容器。
 
-```bash
-# desc_layer 依赖
-pip install flask flask-sock
+---
 
-# exec_layer 依赖（FSM 状态机）
-pip install transitions
-```
+## 2. 开发环境
 
-## 2. ROS2 环境配置
+### 2.1 用 Dev Container（推荐）
 
-### 2.1 安装 ROS2 Foxy
+1. 安装 VS Code 的 **Dev Containers** 扩展。
+2. 打开仓库，命令面板执行 **Dev Containers: Reopen in Container**。
+3. 在容器内终端构建 ROS 接口与节点：
 
-参考 [ROS2 Foxy 官方安装指南](https://docs.ros.org/en/foxy/Installation/Ubuntu-Install-Debians.html)。
+   ```bash
+   make ros
+   ```
 
-### 2.2 一键 source（推荐）
+容器里已就绪：Rust 1.85 + `rust-analyzer`、ROS 2 Jazzy、colcon、`cargo-deb`。
+续期后 rust-analyzer 会自动分析 `services/`（纯 Rust workspace）与 `ros2_ws`
+下的 7 个 rclrs 节点。
 
-项目提供 `setup.sh`，自动设置 ROS2 环境与 DDS：
-
-```bash
-cd ros2_ws
-source setup.sh
-```
-
-脚本内容包含：
-- `source /opt/ros/foxy/setup.bash`
-- `source install/setup.bash`（workspace 编译产物）
-- `source ~/unitree_ros2/cyclonedds_ws/install/setup.bash`（CycloneDDS RMW，可选）
-- `export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`
-- `export ROS_DOMAIN_ID=1`
-- `export CYCLONEDDS_URI=...<NetworkInterfaceAddress>lo</NetworkInterfaceAddress>...`（绑定 loopback 网卡）
-- `export RCUTILS_CONSOLE_OUTPUT_FORMAT=...`
-
-### 2.3 手动配置（不依赖 setup.sh）
+### 2.2 不使用 VS Code
 
 ```bash
-source /opt/ros/foxy/setup.bash
-source ~/unitree_ros2/cyclonedds_ws/install/setup.bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export ROS_DOMAIN_ID=1
-export CYCLONEDDS_URI='<CycloneDDS><Domain><General><NetworkInterfaceAddress>lo</NetworkInterfaceAddress></General></Domain></CycloneDDS>'
-unset ROS_LOCALHOST_ONLY
-source ros2_ws/install/setup.bash
+make image   # 首次：构建 ros-dev:jazzy 镜像
+make shell   # 进入容器
 ```
 
-### 2.4 验证安装
+也可以在 host 上直接调用容器型目标（会自动进入容器并复用持久卷）：
 
 ```bash
-ros2 --version
-ros2 topic list   # 应无报错
+make ros
 ```
 
-## 3. ROS2 工作空间编译
+---
 
-### 3.1 首次编译
+## 3. 纯 Rust 服务（host 或容器）
+
+这些 crate 位于 `services/`，不依赖 ROS，可在 host 直接开发。
 
 ```bash
-cd ros2_ws
-colcon build --symlink-install
-source install/setup.bash
+make test      # cargo test --workspace
+make build     # cargo build --workspace
+make fmt       # cargo fmt --all
+make lint      # cargo fmt --check + cargo clippy -D warnings
+make check     # lint + test
 ```
 
-`--symlink-install` 使 Python 节点可热重载，修改源码后无需重新编译。
-
-**注意：** 编译后运行前务必 `source setup.sh`（见 2.2 节）配置 DDS 环境。
-
-### 3.2 只编译部分包
+### 3.1 运行 gateway
 
 ```bash
-colcon build --packages-select exec_layer desc_layer
+make gateway   # 监听 :5000，默认 DB=/tmp/ros，maps=ros2_ws/config/maps
 ```
 
-### 3.3 每次编译后
+常用环境变量（见 `services/gateway/src/config.rs`）：
 
-必须 source 才能发现新包或更新：
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `GATEWAY_HTTP_PORT` | `5000` | HTTP/WS 端口 |
+| `GATEWAY_DB_DIR` | `config` | SQLite 状态目录 |
+| `GATEWAY_MAPS_DIR` | `config/maps` | tag graph 目录 |
+| `GATEWAY_WEBUI_DIR` | 空 | 托管 WebUI 构建产物；空则只提供 API |
+| `GATEWAY_API_TOKEN` / `GATEWAY_API_TOKEN_FILE` | 空 | 设置后启用 `X-API-Key` 鉴权 |
+| `GATEWAY_EXEC_ACTION` | `exec_task` | 执行 action 名 |
 
 ```bash
-source install/setup.bash
+curl localhost:5000/api/v1/tasks
 ```
 
-### 3.4 ROS2 接口包说明
+---
 
-接口定义均在 `ros_interfaces` 和 `apriltag_interfaces` 中（.action / .srv / .msg）。修改接口后需重新编译这两个包：
+## 4. ROS 接口与节点
+
+接口用 rosidl 定义在 `ros2_ws/src/robot/interfaces/`，节点是独立的 rclrs crate
+（每个节点是一个部署单元）。
 
 ```bash
-colcon build --packages-select ros_interfaces apriltag_interfaces
-source install/setup.bash
+make ros
 ```
 
-## 4. ROS2 包启动
+`make ros` 会：
 
-### 4.1 一键启动（推荐）
+1. 在持久卷 `/ws` 里准备 `rosidl_rust` 与消息包；
+2. 生成接口 crate 到 `/ws/install/share/<pkg>/rust`；
+3. 构建 7 个节点到 `/ws/install_nodes`；
+4. 写出 `ros2_ws/.cargo/config.toml`，把接口 crate 以 `[patch.crates-io]`
+   指向 `/ws/...`，供容器内 rust-analyzer/cargo 解析。
 
-所有后端统一通过 `run.sh` 启动：
+> **改动任何 `.msg` / `.action` / `.srv` 后，必须重新 `make ros`**，新类型才会
+> 出现在编辑器里（rosidl 代码生成的固有属性）。只改节点 `.rs` 无需重建。
+
+首次构建较慢；之后增量。构建产物在持久 Docker 卷中，重建容器不会丢失。
+
+### 4.1 rust-analyzer
+
+在 Dev Container 里打开仓库即用，无需额外配置。`ros2_ws` 节点的解析依赖上面
+第 4 步生成的 `ros2_ws/.cargo/config.toml`，所以请先 `make ros`。
+
+---
+
+## 5. 运行整栈（容器内）
 
 ```bash
-cd ros2_ws
-
-# Mock 模式：纯软件模拟，测 WebUI 链路
-./run.sh mock
-
-# Sim 模式：MuJoCo 仿真，看 GO2 走路
-./run.sh sim
-
-# Real 模式：控制真机 GO2
-./run.sh real
+make run-stack
 ```
 
-内部自动执行 `source setup.sh` + `ros2 launch desc_layer run.launch.py`。
-
-### 4.2 逐节点启动（调试用）
+`deploy/run_stack.sh` 会同时启动 `orchestrator` 与一个 `adapter`。可覆盖：
 
 ```bash
-source ros2_ws/setup.sh
-
-# Planner
-ros2 run exec_layer planner_node --ros-args -p maps_dir:=config/maps
-
-# Exec Layer
-ros2 run exec_layer exec_layer_node --ros-args -p robot_backend:=mock
-
-# Desc Layer
-ros2 run desc_layer desc_layer_node
-
-# Mock Exec Layer（mock 模式专用）
-ros2 run mock_exec_layer mock_exec_layer_node
+DEVICE_TYPE=mock make run-stack        # 默认，纯软件
+DEVICE_TYPE=diff_drive make run-stack  # 内置差速仿真
+DEVICE_TYPE=tonypi make run-stack      # 真机，需 TONYPI_RPC_URL
 ```
 
-### 4.4 相机测试发布器
+运行前需先 `make ros`（脚本会 source `/ws/install` 与 `/ws/install_nodes`）。
+其他节点（`gateway_bridge`、`diagnosis_node`、`physio_mock`、`perception_*`）可按
+需用 `ros2 run <pkg> <node>` 单独启动，用于调试。
+
+---
+
+## 6. WebUI
+
+WebUI 在 host 上构建（需要 pnpm）：
 
 ```bash
-ros2 launch camera_test_publisher camera_test_publisher.launch.py
+make webui       # pnpm install + vite build，产物在 webui/dist
+make webui-dev   # Vite 开发服务器
 ```
 
-### 4.5 Mock 执行层（mock_exec_layer，无硬件也能全链路测试）
+生产部署时把 `webui/dist` 放到 `GATEWAY_WEBUI_DIR`，由 gateway 同源托管。
+
+---
+
+## 7. 打包与部署
 
 ```bash
-source ros2_ws/setup.sh
-
-# 启动 mock 执行层（默认 action 名 mock_exec_task）
-ros2 run mock_exec_layer mock_exec_layer_node
+make deb         # Rust 服务（cargo-deb），产物 target/debian/*.deb
+make ros-deb     # ROS 节点 + 接口，产物 dist/ros-subhealth-nodes_<ver>_amd64.deb
+make publish DEBS='dist/*.deb' GPG_KEY=<key-id>   # 发布到 aptly apt 仓库
 ```
 
-日志预期：`[INFO] [mock_exec_layer_node]: Mock Exec Layer ready on action: mock_exec_task`
+`make publish` 需要打包机上安装 `aptly` 与 GPG key（不在容器内）。接口包的
+独立 `bloom` 发布、目标机安装、配置与密钥管理见
+[`deploy/README.md`](../../deploy/README.md)。
 
-**模拟行为：**
+---
 
-| 任务类型 | 模拟表现 |
-| --- | --- |
-| `go_to_tag` | 3 秒完成，每秒发一次 feedback（progress 0.3→0.6→1.0） |
-| `patrol_route` | 每个 tag 耗时 1 秒，逐一发 feedback |
-| `hold` | 立即返回 succeeded |
-| 失败模拟 | `constraints.max_speed_mps < 0` 时返回 failed |
-| 取消 | 收到 cancel 请求后立即返回 canceled |
+## 8. 提交规范（commitlint）
 
-### 4.6 Planner（路径规划）
-
-Planner 集成在 `exec_layer` 包内部，通过 launch 文件自动启动：
+提交信息通过 husky + commitlint 校验：
 
 ```bash
-source ros2_ws/setup.sh
-ros2 launch desc_layer mock.launch.py  # 自动包含 planner
+npm install          # 首次，安装并激活 husky hook
 ```
 
-或单独启动：
+格式：`type(scope): subject`，例如：
+
+```text
+feat(adapter): enforce safety limits and watchdog
+fix(gateway): return 404 for unknown task ids
+docs(guide): rewrite getting-started for the Jazzy stack
+```
+
+手动校验：
 
 ```bash
-source ros2_ws/setup.sh
-ros2 run exec_layer planner_node --ros-args -p maps_dir:=config/maps
+npx commitlint --edit .git/COMMIT_EDITMSG
 ```
 
-日志预期：`[INFO] [planner_node]: Loaded graph: 4 tags, 4 edges, 2 routes`
+规则见 `commitlint.config.cjs`（scope 可选、小写；subject 允许中文；标题 ≤ 120）。
 
-### 4.7 查看所有可用节点
+---
 
-```bash
-ros2 node list
-ros2 topic list
-ros2 action list
-```
+## 9. 常见问题
 
-## 5. WebUI 启动
+**Q: rust-analyzer 在 `ros2_ws` 里报 unresolved import（`device_interfaces` 等）？**
+先生成接口 crate：在容器里执行 `make ros`。它依赖 `ros2_ws/.cargo/config.toml`
+指向 `/ws/install/share/*/rust`。
 
-### 5.1 安装依赖
+**Q: `make ros` 报 `/ws` 权限错误？**
+`/ws` 是持久卷，首次需归属容器用户。Dev Container 的 `postCreateCommand` 会
+`chown`；手动场景可执行
+`docker compose -f docker/dev/compose.yaml run --rm --user root dev chown -R ubuntu:ubuntu /ws`。
 
-```bash
-cd webui
-pnpm install
-```
+**Q: 改了接口但编辑器里类型没变？**
+重新 `make ros`。
 
-### 5.2 开发模式启动
+**Q: `make webui` 提示 `pnpm not found`？**
+WebUI 在 host 构建，请确保 host 安装了 Node.js 20+ 与 pnpm 9。
 
-```bash
-pnpm dev
-```
+**Q: `make test` 需要 ROS 吗？**
+不需要。它只跑 `services/` 的纯 Rust 测试；ROS 节点在容器里构建和运行。
 
-默认监听 `http://localhost:5173`，Vite 自动热更新。
+**Q: 运行节点时报端口/鉴权问题？**
+见 §3.1 的 gateway 环境变量，以及 `deploy/config/*.env` 的默认配置。
 
-### 5.3 生产构建
+---
 
-```bash
-pnpm build      # 输出到 webui/dist/
-pnpm preview    # 本地预览生产构建
-```
+## 参考
 
-## 6. commitlint 提交规范
-
-项目使用 husky + commitlint 自动拦截不合规的 commit message。
-
-### 6.1 格式
-
-```
-type(scope): subject
-```
-
-**type 取值（@commitlint/config-conventional）：**
-
-| type | 说明 |
-| --- | --- |
-| feat | 新功能 |
-| fix | 修复 |
-| docs | 文档 |
-| style | 代码格式 |
-| refactor | 重构 |
-| test | 测试 |
-| chore | 杂项（构建/CI） |
-| rfc | RFC 文档专用 |
-
-**项目内 scope 示例：** `docs`, `exec`, `desc`, `perception`, `visual`, `rfc`
-
-### 6.2 提交示例
-
-```
-feat(docs): 更新RFC 003和RFC 006文档
-fix(exec): 修复planner超时未处理的问题
-rfc(docs): 添加决策层动作任务流协议
-docs(guide): 添加操作手册
-```
-
-### 6.3 规则
-
-- header 最大 120 字符
-- subject 大小写不限制，允许中文
-- scope 必须小写
-
-### 6.4 绕过 commitlint（紧急情况）
-
-```bash
-git commit --no-verify -m "wip: 临时提交"
-```
-
-## 7. 全链路启动
-
-所有模式统一入口：
-
-### 7.1 Mock 模式（纯软件，测 WebUI）
-
-```bash
-cd ros2_ws
-./run.sh mock
-```
-
-另开一个终端启动 WebUI：
-
-```bash
-cd webui && pnpm dev
-```
-
-浏览器打开 `http://localhost:5173` → 新建 go_to_tag 任务 → 实时看到 accepted → running → succeeded 状态变化。
-
-### 7.2 Sim 模式（MuJoCo 仿真）
-
-```bash
-cd ros2_ws
-./run.sh sim
-```
-
-MuJoCo 窗口显示 GO2 在 tag 地图上行走。
-
-### 7.3 Real 模式（真机 GO2）
-
-```bash
-cd ros2_ws
-./run.sh real
-```
-
-## 8. 常见问题
-
-### Q: 启动后任务一直卡在 `accepted` 状态
-
-检查 exec_layer 或 mock_exec_layer 是否已启动。desc_layer 需要连接到对应的 action server。
-
-```bash
-ros2 action list  # 查看可用 action server
-```
-
-若 action server 不存在，desc_layer 的 `wait_for_server` 会在 5 秒后超时，任务变为 `failed`。
-
-### Q: `colcon build` 报错找不到 package
-
-确保先 `source /opt/ros/foxy/setup.bash`，并且 `ros2_ws/src/` 下存在对应的 package.xml。
-
-### Q: `ros2 run` 提示找不到 package
-
-```bash
-source ros2_ws/install/setup.bash
-# 验证包是否存在
-ros2 pkg list | grep <包名>
-```
-
-### Q: WebUI 连接不上 desc_layer
-
-确认 desc_layer 已启动（日志无报错），且 WebUI 的 Vite proxy 配置正确。默认 Vite proxy 将 `/api` 转发到 `http://localhost:5000`。
-
-### Q: desc_layer 返回 `401 UNAUTHORIZED`
-
-desc_layer 启动了 `api_token` 参数，所有请求需要在 HTTP header 中添加：
-
-```bash
-curl -H "X-API-Key: my-secret-token" http://localhost:5000/api/v1/tasks
-```
-
-WebUI 开发环境下，可在浏览器控制台设置 `localStorage.setItem("api_token", "my-secret-token")` 后刷新（需配套修改前端 `api/tasks.ts` 中的 header 注入逻辑）。
-
-### Q: API 返回 `{"error": {"code": "...", "message": "..."}}` 格式
-
-这是统一错误格式。常见的 `code`：
-- `INVALID_JSON` — 请求体不是合法 JSON
-- `INVALID_GOAL` — task goal 字段缺失或 type 非法
-- `NOT_FOUND` — 资源不存在
-- `INVALID_STATE` — 任务已在终态无法取消
-- `CONFLICT` — 编辑地图时被活跃任务引用
-- `UNAUTHORIZED` — 缺少或错误的 API Token
-
-### Q: 任务重启后还在吗？
-
-在。`desc_layer` 使用 SQLite 持久化任务记录，重启后任务历史不丢失。数据库文件默认在 `ros2_ws/config/tasks.db`。
-
-### Q: 如何追踪某个请求的全链路？
-
-每个 HTTP 响应包含 `X-Trace-Id` header 和响应体中的 `trace_id` 字段。可在请求时通过 `X-Trace-Id: my-custom-id` 指定，便于日志关联。
-
-### Q: commitlint 报错
-
-```bash
-# 查看 husky hook 是否激活
-ls -la .husky/commit-msg
-# 手动触发校验
-npx --no -- commitlint --edit .git/COMMIT_EDITMSG
-```
-
-## 附录: Arch + Docker 编译
-
-在 Arch / 无法直接安装 ROS2 Foxy（官方仅支持 Ubuntu 20.04）的环境下，可用 Docker
-方式：镜像**一次性**构建，源码/接口改动后只需在容器内 `colcon` 增量编译，无需重建镜像。
-
-### A. 安装 Docker
-
-```bash
-# Arch
-sudo pacman -S docker
-sudo systemctl enable --now docker
-# 若无需 root，把当前用户加入 docker 组后重新登录
-sudo usermod -aG docker "$USER"
-```
-
-### B. 构建镜像（仅需一次，或当 Dockerfile 依赖变化时）
-
-```bash
-cd ros2_ws/docker
-docker compose build
-```
-
-### C. 进入容器（一次性，挂载 ros2_ws → /workspace）
-
-```bash
-cd ros2_ws
-./docker/dev.sh        # 弹出一次性容器的交互 bash，退出即删（--rm）
-```
-
-容器内操作统一用 `make`（见挂载的 `/workspace/Makefile`）：
-
-```bash
-make build                          # 编译 (colcon build --symlink-install)
-make run                            # 运行后端，默认 mock
-make run backend=sim                # 运行 sim（提示需挂载 unitree，暂未容器化仅 mock 可用）
-make run backend=real               # 运行 real（同上）
-make clean                          # 清理 build/ install/ log/
-```
-
-- 容器使用 **host 网络**（DDS 绑定 `lo`、desc_layer 端口 5000 直接可达），与 `setup.sh` 一致。
-- `build/`、`install/`、`log/` 产物留在宿主（已在 `.gitignore`），可跨容器增量编译、便于查看。
-- 容器内 `USER=rosdev (uid 1000)`，对应主流桌面主机当前用户；若宿主 UID 非 1000，
-  可在 `docker/docker-compose.yml` 中调整 `user:` 与卷属主。
-- `sim` / `real` 后端**尚未**容器化（需 Unitree SDK + MuJoCo + X11 显示），目前请用 `make run`（mock）验证 WebUI 链路。
+- 当前架构（权威）：[`docs/tech/tech-current-architecture.md`](../tech/tech-current-architecture.md)
+- 语言边界 ADR：[`docs/tech/adr-001-language-scope.md`](../tech/adr-001-language-scope.md)
+- 设备契约 ADR：[`docs/tech/adr-002-device-contract.md`](../tech/adr-002-device-contract.md)
+- 设计规格：[`docs/superpowers/specs/2026-09-13-rust-ros2-jazzy-rearchitecture-design.md`](../superpowers/specs/2026-09-13-rust-ros2-jazzy-rearchitecture-design.md)
+- 部署打包：[`deploy/README.md`](../../deploy/README.md)

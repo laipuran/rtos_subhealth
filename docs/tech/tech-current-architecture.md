@@ -56,15 +56,20 @@ orchestrator resolves tag/waypoint targets to poses via the world model (MAP_PAT
 
 ## Build & run
 
-```bash
-# pure Rust services + tests (host)
-cargo test --workspace
+All routine tasks go through the root `Makefile` (`make help`).
 
-# build all ROS nodes (Jazzy container)
-docker build -t ros-dev:jazzy docker/dev
-docker run --rm -v "$PWD":/workspace -w /workspace ros-dev:jazzy \
-  bash docker/dev/build_ros_rust.sh
+```bash
+# pure Rust services + tests (host or container)
+make test
+
+# ROS interfaces + nodes (dev container; auto-enters it from the host)
+make ros
+
+# run orchestrator + adapter (dev container)
+make run-stack
 ```
+
+Full walkthrough: `docs/guide/getting-started.md`.
 
 ## Deployment
 

@@ -57,21 +57,48 @@ docs/                 spec, plan, ADRs, RFCs, research
 
 ## Quickstart
 
-### Gateway (Rust, no ROS needed)
+Every routine task is wrapped in the root `Makefile`; run `make help` for the
+full list.
+
+### Rust services + gateway (no ROS needed)
 
 ```bash
-cargo test --workspace
-GATEWAY_DB_DIR=/tmp/ros GATEWAY_MAPS_DIR=ros2_ws/config/maps cargo run -p gateway
+make test          # cargo test --workspace
+make gateway       # HTTP/WS gateway on :5000
 curl localhost:5000/api/v1/tasks
 ```
 
-### ROS interfaces on Jazzy (Docker)
+### ROS interfaces + nodes (Jazzy dev container)
+
+The ROS work (interfaces, rclrs nodes, and IDE analysis of `ros2_ws`) runs in
+the pinned Jazzy dev container. With VS Code, install the *Dev Containers*
+extension and choose **Reopen in Container**, then:
 
 ```bash
-docker build -t ros-dev:jazzy docker/dev
-docker run --rm -v "$PWD":/workspace -w /workspace ros-dev:jazzy \
-  bash docker/dev/build_ros_rust.sh
+make ros
 ```
+
+`make ros` builds the interfaces and nodes and writes
+`ros2_ws/.cargo/config.toml`, which lets the `rust-analyzer` extension (running
+in the container) resolve the node crates. Re-run it after editing any
+`.msg`/`.action`/`.srv`.
+
+Without VS Code, the same targets enter the container for you:
+
+```bash
+make image   # build the dev image once
+make ros     # build interfaces + nodes
+```
+
+### WebUI and packaging
+
+```bash
+make webui       # pnpm install + build
+make deb         # service .deb (cargo-deb)
+make ros-deb     # ROS nodes + interfaces .deb
+```
+
+Full walkthrough: [`docs/guide/getting-started.md`](docs/guide/getting-started.md).
 
 ## Migration status
 

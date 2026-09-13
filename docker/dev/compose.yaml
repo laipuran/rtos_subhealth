@@ -7,10 +7,30 @@ services:
       dockerfile: Dockerfile
     image: ros-dev:jazzy
     network_mode: host
+    init: true
+    # Run as the non-root user so files written into the bind-mounted repo are
+    # owned by the host user. The Dev Container overrides this via `remoteUser`
+    # / `updateRemoteUserUID`.
+    user: ubuntu
     environment:
+      HOME: /home/ubuntu
       RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
       ROS_DOMAIN_ID: "1"
+      # colcon build workspace for the Rust ROS nodes (persisted in a volume,
+      # reused across container recreations).
+      ROS_RUST_WS: /ws
     volumes:
       - ../..:/workspace
+      - ros2rust_ws:/ws
+      - cargo_reg:/usr/local/cargo
     working_dir: /workspace
-    command: bash
+    stdin_open: true
+    tty: true
+    command: sleep infinity
+
+volumes:
+  # Pre-existing volumes holding the ROS build and the Cargo registry cache.
+  ros2rust_ws:
+    external: true
+  cargo_reg:
+    external: true
