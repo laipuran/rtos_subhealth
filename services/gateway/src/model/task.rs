@@ -22,6 +22,54 @@ impl Default for Constraints {
     }
 }
 
+/// Device-agnostic task target (mirrors `device_interfaces/msg/TaskTarget`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct TaskTarget {
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub tag_id: i32,
+    #[serde(default)]
+    pub waypoint_id: String,
+    #[serde(default)]
+    pub action_id: String,
+    #[serde(default)]
+    pub position_tolerance_m: f32,
+    #[serde(default)]
+    pub yaw_tolerance_rad: f32,
+}
+
+impl TaskTarget {
+    pub fn from_value(v: &Value) -> Self {
+        Self {
+            kind: v
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            tag_id: v.get("tag_id").and_then(Value::as_i64).unwrap_or(0) as i32,
+            waypoint_id: v
+                .get("waypoint_id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            action_id: v
+                .get("action_id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            position_tolerance_m: v
+                .get("position_tolerance_m")
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0) as f32,
+            yaw_tolerance_rad: v
+                .get("yaw_tolerance_rad")
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0) as f32,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Goal {
     #[serde(rename = "type")]
@@ -32,6 +80,15 @@ pub struct Goal {
     #[serde(default)]
     pub constraints: Constraints,
     pub deadline_ms: i64,
+    /// Device-agnostic fields (empty for legacy tag-only goals).
+    #[serde(default)]
+    pub device_id: String,
+    #[serde(default)]
+    pub primitive: String,
+    #[serde(default)]
+    pub target: Option<TaskTarget>,
+    #[serde(default)]
+    pub params_json: String,
 }
 
 impl Goal {
@@ -43,11 +100,25 @@ impl Goal {
             target_tags: Vec::new(),
             constraints: Constraints::default(),
             deadline_ms: 0,
+            device_id: String::new(),
+            primitive: String::new(),
+            target: None,
+            params_json: String::new(),
         }
     }
 
     pub fn with_tags(mut self, tags: Vec<i32>) -> Self {
         self.target_tags = tags;
+        self
+    }
+
+    pub fn with_device(
+        mut self,
+        device_id: impl Into<String>,
+        primitive: impl Into<String>,
+    ) -> Self {
+        self.device_id = device_id.into();
+        self.primitive = primitive.into();
         self
     }
 
@@ -97,6 +168,70 @@ impl Goal {
             target_tags,
             constraints,
             deadline_ms: goal.get("deadline_ms").and_then(Value::as_i64).unwrap_or(0),
+            device_id: String::new(),
+            primitive: String::new(),
+            target: None,
+            params_json: String::new(),
+        })
+    }
+
+    /// Parse a device-agnostic task from a request body (the new shape). The
+    /// device identifier may be omitted and defaults to `"mock"`.
+    pub fn from_task_value(body: &Value) -> Option<Self> {
+        let primitive = body.get("primitive")?.as_str()?.to_string();
+        if primitive.is_empty() {
+            return None;
+        }
+        let device_id = body
+            .get("device_id")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("mock")
+            .to_string();
+        let target = body
+            .get("target")
+            .filter(|v| !v.is_null())
+            .map(TaskTarget::from_value);
+        let c = body.get("constraints").cloned().unwrap_or(Value::Null);
+        let constraints = Constraints {
+            max_speed_mps: c
+                .get("max_speed_mps")
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0) as f32,
+            min_clearance_m: c
+                .get("min_clearance_m")
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0) as f32,
+            avoid_tags: c
+                .get("avoid_tags")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_i64)
+                        .map(|v| v as i32)
+                        .collect()
+                })
+                .unwrap_or_default(),
+        };
+        Some(Self {
+            type_: primitive.clone(),
+            priority: body.get("priority").and_then(Value::as_i64).unwrap_or(0) as i32,
+            route_id: body
+                .get("route_id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            target_tags: Vec::new(),
+            constraints,
+            deadline_ms: body.get("deadline_ms").and_then(Value::as_i64).unwrap_or(0),
+            device_id,
+            primitive,
+            target,
+            params_json: body
+                .get("params_json")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
         })
     }
 }
@@ -140,12 +275,17 @@ impl TaskRecord {
 
     /// The external wire representation returned by the HTTP API.
     pub fn to_wire_dict(&self) -> Value {
+        let target = serde_json::to_value(&self.goal.target).unwrap_or(Value::Null);
         json!({
             "goal_id": self.goal_id,
             "type": self.goal.type_,
             "priority": self.goal.priority,
             "route_id": self.goal.route_id,
             "target_tags": self.goal.target_tags,
+            "device_id": self.goal.device_id,
+            "primitive": self.goal.primitive,
+            "target": target,
+            "params_json": self.goal.params_json,
             "state": self.state,
             "progress": self.progress,
             "current_tag": self.current_tag,

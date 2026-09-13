@@ -53,6 +53,7 @@ colcon build --merge-install \
     "$REPO_ROOT/ros2_ws/src/robot/physio_mock" \
     "$REPO_ROOT/ros2_ws/src/robot/diagnosis_node" \
     "$REPO_ROOT/ros2_ws/src/robot/perception_sim" \
+    "$REPO_ROOT/ros2_ws/src/robot/gateway_bridge" \
   --build-base "$WS/build_nodes" --install-base "$WS/install_nodes"
 
 echo "[OK] Rust ROS nodes built into $WS/install_nodes"

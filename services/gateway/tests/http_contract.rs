@@ -195,3 +195,36 @@ async fn auth_requires_api_key_when_enabled() {
     let (status, _body, _) = send(&app.router, req).await;
     assert_eq!(status, StatusCode::OK);
 }
+
+#[tokio::test]
+async fn create_device_task_dispatches_and_persists_fields() {
+    let app = test_app("");
+    let body = json!({
+        "device_id": "mock",
+        "primitive": "execute_primitive",
+        "target": {"kind": "action", "action_id": "wave"},
+        "params_json": "{\"action\":\"wave\"}"
+    })
+    .to_string();
+    let (status, body, _) = send(&app.router, post_json("/api/v1/tasks", &body)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["status"], "accepted");
+    assert_eq!(body["type"], "execute_primitive");
+    assert_eq!(app.bridge.commands().len(), 1);
+
+    let goal_id = body["task_id"].as_str().unwrap();
+    let (status, record, _) = send(&app.router, get(&format!("/api/v1/tasks/{goal_id}"))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(record["device_id"], "mock");
+    assert_eq!(record["primitive"], "execute_primitive");
+    assert_eq!(record["target"]["action_id"], "wave");
+}
+
+#[tokio::test]
+async fn invalid_device_primitive_returns_invalid_goal() {
+    let app = test_app("");
+    let body = json!({"device_id": "mock", "primitive": "teleport"}).to_string();
+    let (status, body, _) = send(&app.router, post_json("/api/v1/tasks", &body)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["code"], "INVALID_GOAL");
+}
