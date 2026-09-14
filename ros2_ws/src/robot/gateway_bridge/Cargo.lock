@@ -406,6 +406,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "diagnosis_interfaces"
+version = "0.1.0"
+dependencies = [
+ "builtin_interfaces",
+ "rosidl_runtime_rs",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -637,6 +645,7 @@ dependencies = [
  "axum",
  "builtin_interfaces",
  "device_interfaces",
+ "diagnosis_interfaces",
  "futures",
  "gateway",
  "geometry_msgs",
@@ -1898,10 +1907,6 @@ version = "5.3.8"
 [[patch.unused]]
 name = "composition_interfaces"
 version = "2.0.4"
-
-[[patch.unused]]
-name = "diagnosis_interfaces"
-version = "0.1.0"
 
 [[patch.unused]]
 name = "diagnostic_msgs"

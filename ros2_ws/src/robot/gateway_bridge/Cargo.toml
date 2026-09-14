@@ -19,6 +19,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 gateway = { path = "../../../../services/gateway" }
 task_interfaces = { version = "0.1" }
 device_interfaces = { version = "0.1" }
+diagnosis_interfaces = { version = "0.1" }
 std_msgs = "*"
 geometry_msgs = "*"
 builtin_interfaces = "*"
