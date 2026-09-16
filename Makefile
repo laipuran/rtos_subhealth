@@ -92,15 +92,21 @@ gateway:
 	GATEWAY_HTTP_PORT=$(GATEWAY_HTTP_PORT) \
 	cargo run -p gateway
 
-## webui: install deps and build the WebUI (host only)
+## webui: install deps and build the WebUI
 webui:
-	@command -v pnpm >/dev/null || { echo "pnpm not found: run 'make webui' on the host"; exit 1; }
+ifeq ($(IN_CONTAINER),1)
 	cd webui && pnpm install --frozen-lockfile && pnpm build
+else
+	$(DEV) make webui
+endif
 
-## webui-dev: run the WebUI dev server (host only)
+## webui-dev: run the WebUI dev server
 webui-dev:
-	@command -v pnpm >/dev/null || { echo "pnpm not found: run 'make webui-dev' on the host"; exit 1; }
+ifeq ($(IN_CONTAINER),1)
 	cd webui && pnpm install --frozen-lockfile && pnpm dev
+else
+	$(DEV) make webui-dev
+endif
 
 ## ros: build ROS interfaces + nodes
 ros:

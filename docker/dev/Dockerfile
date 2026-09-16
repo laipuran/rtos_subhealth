@@ -3,8 +3,8 @@
 #   docker build -t ros-dev:jazzy docker/dev
 #   docker run --rm -it --network host -v "$PWD":/workspace ros-dev:jazzy
 #
-# All ROS/Rust/C++ tooling is provided by the container; nothing is installed
-# on the host.
+# All ROS/Rust/C++/Node tooling is provided by the container; nothing is
+# required on the host when using the Dev Container.
 FROM ros:jazzy-ros-base
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -40,6 +40,16 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
 # cargo-deb for packaging the Rust services (`make deb`). Pinned to the newest
 # release that still builds with the 1.85 toolchain.
 RUN cargo install cargo-deb --version 2.8.0 --locked
+
+# WebUI toolchain. Keep the Node major on the current LTS line and pin pnpm so
+# frozen-lockfile installs behave the same across developer machines.
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends nodejs \
+ && npm install --global pnpm@9.15.9 \
+ && node --version \
+ && pnpm --version \
+ && rm -rf /var/lib/apt/lists/*
 
 # The node build workspace is a named volume. Pre-create it owned by the dev
 # user so a fresh volume inherits writable ownership; keep the shared Cargo home

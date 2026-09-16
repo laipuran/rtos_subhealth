@@ -18,10 +18,10 @@ make help
 | --- | --- |
 | Docker + Docker Compose | ROS / Rust 工具链全部在容器内，host 不安装 ROS |
 | VS Code + [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) 扩展 | 推荐；容器内自带 rust-analyzer |
-| Rust 1.85（可选，host） | 只跑纯 Rust 服务测试时需要 |
-| Node.js 20+ / pnpm 9（可选，host） | 构建 WebUI 时需要 |
+| Rust 1.85（可选，host） | 只在不使用 Dev Container 时跑纯 Rust 服务测试需要 |
+| Node.js 24 LTS / pnpm 9（可选，host） | 仅直接绕过 Dev Container 时需要；容器内已提供 |
 
-`make` 会检测自己是否在容器内：`ros`、`deb`、`run-stack`、`shell` 等目标在
+`make` 会检测自己是否在容器内：`ros`、`deb`、`run-stack`、`webui`、`shell` 等目标在
 host 上执行时会自动通过 `docker compose` 进入 `ros-dev:jazzy` 容器。
 
 ---
@@ -143,11 +143,12 @@ DEVICE_TYPE=tonypi make run-stack      # 真机，需 TONYPI_RPC_URL
 
 ## 6. WebUI
 
-WebUI 在 host 上构建（需要 pnpm）：
+WebUI 可以从 host 或 Dev Container 发起构建。host 上的 `make` 会自动进入
+Dev Container；容器内已提供 Node.js 24 LTS 和 pnpm 9：
 
 ```bash
 make webui       # pnpm install + vite build，产物在 webui/dist
-make webui-dev   # Vite 开发服务器
+make webui-dev   # Vite 开发服务器（默认端口 5173）
 ```
 
 生产部署时把 `webui/dist` 放到 `GATEWAY_WEBUI_DIR`，由 gateway 同源托管。
@@ -209,7 +210,8 @@ npx commitlint --edit .git/COMMIT_EDITMSG
 重新 `make ros`。
 
 **Q: `make webui` 提示 `pnpm not found`？**
-WebUI 在 host 构建，请确保 host 安装了 Node.js 20+ 与 pnpm 9。
+请先执行 `make image` 重建镜像，然后在 VS Code 中重连 Dev Container。
+如果直接绕过容器执行 WebUI 命令，才需要在 host 安装 Node.js 24 LTS 与 pnpm 9。
 
 **Q: `make test` 需要 ROS 吗？**
 不需要。它只跑 `services/` 的纯 Rust 测试；ROS 节点在容器里构建和运行。
