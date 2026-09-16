@@ -5,20 +5,22 @@
 #
 # All ROS/Rust/C++/Node tooling is provided by the container; nothing is
 # required on the host when using the Dev Container.
-FROM ros:jazzy-ros-base
+ARG ROS_DISTRO=jazzy
+FROM ros:${ROS_DISTRO}-ros-base
+ARG UBUNTU_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential cmake git curl pkg-config libclang-dev sudo \
       python3-pip python3-vcstool \
-      ros-jazzy-rmw-cyclonedds-cpp \
-      ros-jazzy-cv-bridge \
-      ros-jazzy-sensor-msgs \
-      ros-jazzy-rosidl-default-generators \
-      ros-jazzy-rosidl-default-runtime \
-      ros-jazzy-test-msgs \
-      ros-jazzy-example-interfaces \
+      ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
+      ros-${ROS_DISTRO}-cv-bridge \
+      ros-${ROS_DISTRO}-sensor-msgs \
+      ros-${ROS_DISTRO}-rosidl-default-generators \
+      ros-${ROS_DISTRO}-rosidl-default-runtime \
+      ros-${ROS_DISTRO}-test-msgs \
+      ros-${ROS_DISTRO}-example-interfaces \
  && rm -rf /var/lib/apt/lists/*
 
 # The base image already ships an `ubuntu` user at UID/GID 1000. Reuse it as

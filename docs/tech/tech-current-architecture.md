@@ -1,4 +1,7 @@
-# 当前架构（权威文档）
+# 当前架构（历史归档）
+
+> **已 superseded：** 权威架构已迁移到 `docs/architecture/` 和
+> `docs/superpowers/specs/2026-09-17-device-agnostic-rewrite-design.md`。
 
 > 本文是最新描述。若 RFC 或 `docs/guide/` 中的旧文档与本文冲突，以本文和 ADR
 > 为准。旧 Python/ROS 2 Foxy 实现保存在 `legacy/`，仅供参考。

@@ -5,7 +5,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ros-dev:jazzy
+      args:
+        ROS_DISTRO: ${ROS_DISTRO:-jazzy}
+        UBUNTU_VERSION: ${UBUNTU_VERSION:-24.04}
+    image: ros-dev:${ROS_DISTRO:-jazzy}
     network_mode: host
     init: true
     # Run as the non-root user so files written into the bind-mounted repo are

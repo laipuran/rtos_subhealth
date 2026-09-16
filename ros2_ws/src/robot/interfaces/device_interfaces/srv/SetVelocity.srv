@@ -1,9 +1,0 @@
-# Velocity command. Optional capability: only devices advertising `set_velocity`
-# + `supports_velocity` implement this.
-float32 vx
-float32 vy
-float32 vyaw
-float32 duration_s   # 0 = until the next command
----
-bool accepted
-string message

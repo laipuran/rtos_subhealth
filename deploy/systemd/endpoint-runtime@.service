@@ -1,13 +1,13 @@
 [Unit]
-Description=ROS Subhealth control-plane gateway
+Description=ROS Subhealth endpoint runtime (%i)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=ros-subhealth
-EnvironmentFile=-/etc/ros/gateway.env
-ExecStart=/usr/bin/gateway
+EnvironmentFile=/etc/ros/endpoint-%i.env
+ExecStart=/usr/bin/endpoint-runtime
 Restart=on-failure
 RestartSec=2
 

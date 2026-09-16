@@ -1,4 +1,7 @@
-# RFC 011：TonyPi 机器人端 exec
+# RFC 011：TonyPi 机器人端 exec（历史归档）
+
+> **已 superseded：** 具体设备实现必须遵循 endpoint adapter 边界，本文不再
+> 作为实现契约。
 
 **状态：** 草案
 

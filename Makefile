@@ -27,14 +27,15 @@ STACK_CMD = source /opt/ros/jazzy/setup.bash && \
 
 .DEFAULT_GOAL := help
 
-.PHONY: help image shell test build fmt lint check gateway webui webui-dev \
-        ros ros-deb run-stack deb publish clean
+.PHONY: help image humble jazzy shell test build fmt lint check gateway webui webui-dev \
+        ros ros-deb run server endpoint deb publish clean
 
 ## help: list available targets
 help:
 	@echo "ROS Subhealth targets:"
 	@echo
-	@echo "  make image           Build the Jazzy + Rust dev image"
+	@echo "  make image humble    Build the Ubuntu 22.04 + ROS Humble image"
+	@echo "  make image jazzy     Build the Ubuntu 24.04 + ROS Jazzy image"
 	@echo "  make shell           Open a shell in the dev container"
 	@echo "  make test            Run the pure-Rust workspace tests"
 	@echo "  make build           Build the pure-Rust workspace"
@@ -46,16 +47,24 @@ help:
 	@echo "  make webui-dev       Run the WebUI dev server"
 	@echo "  make ros             Build ROS interfaces + nodes (dev container)"
 	@echo "  make ros-deb         Package the built ROS nodes into a .deb"
-	@echo "  make run-stack       Run orchestrator + adapter (dev container)"
+	@echo "  make run server      Run the control-plane server"
+	@echo "  make run endpoint DEVICE_TYPE=<device-type>"
 	@echo "  make deb             Build service .deb(s) with cargo-deb"
 	@echo "  make publish         Publish .deb artifacts to the apt repo"
 	@echo "  make clean           Remove build artifacts"
 	@echo
 	@echo "Variables: SERVICE_DEBS='gateway' ROS_RUST_WS=/ws DEBS='dist/*.deb'"
 
-## image: build the dev image
+## image: build the selected ROS image profile
 image:
-	$(COMPOSE) build
+	@case " $(MAKECMDGOALS) " in \
+	  *" humble "*) $(COMPOSE) build --build-arg ROS_DISTRO=humble --build-arg UBUNTU_VERSION=22.04 ;; \
+	  *" jazzy "*) $(COMPOSE) build --build-arg ROS_DISTRO=jazzy --build-arg UBUNTU_VERSION=24.04 ;; \
+	  *) echo "usage: make image humble|jazzy" >&2; exit 2 ;; \
+	esac
+
+humble jazzy:
+	@:
 
 ## shell: interactive shell in the dev container
 shell:
@@ -124,13 +133,16 @@ else
 	$(DEV) bash -lc 'deploy/deb/build_ros_debs.sh "$$ROS_RUST_WS/install_nodes" "$$ROS_RUST_WS/install" dist'
 endif
 
-## run-stack: run orchestrator + one adapter
-run-stack:
-ifeq ($(IN_CONTAINER),1)
-	bash -lc '$(STACK_CMD)'
-else
-	$(DEV) bash -lc '$(STACK_CMD)'
-endif
+## run: dispatch to exactly one runtime mode
+run:
+	@case " $(MAKECMDGOALS) " in \
+	  *" server "*) $(MAKE) gateway ;; \
+	  *" endpoint "*) test -n "$(DEVICE_TYPE)" || { echo "usage: make run endpoint DEVICE_TYPE=<device-type>" >&2; exit 2; }; DEVICE_TYPE=$(DEVICE_TYPE) cargo run -p fake-endpoint-adapter --bin endpoint-runtime ;; \
+	  *) echo "usage: make run server | make run endpoint DEVICE_TYPE=<device-type>" >&2; exit 2 ;; \
+	esac
+
+server endpoint:
+	@:
 
 ## deb: build service .deb(s)
 deb:

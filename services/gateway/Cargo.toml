@@ -7,6 +7,9 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+domain-contract = { path = "../../contracts/domain-contract" }
+event-contract = { path = "../../contracts/event-contract" }
+task-contract = { path = "../../contracts/task-contract" }
 thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true

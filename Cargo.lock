@@ -197,28 +197,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
 
 [[package]]
-name = "device-sdk"
-version = "0.1.0"
-dependencies = [
- "orchestrator-core",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "diagnosis"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "regex",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -244,6 +222,16 @@ name = "domain-contract"
 version = "0.1.0"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "endpoint-runtime"
+version = "0.1.0"
+dependencies = [
+ "domain-contract",
+ "execution-contract",
+ "sensor-contract",
+ "thiserror",
 ]
 
 [[package]]
@@ -285,6 +273,16 @@ dependencies = [
  "sensor-contract",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "fake-endpoint-adapter"
+version = "0.1.0"
+dependencies = [
+ "domain-contract",
+ "endpoint-runtime",
+ "execution-contract",
+ "serde_json",
 ]
 
 [[package]]
@@ -384,12 +382,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "domain-contract",
+ "event-contract",
  "futures-util",
  "http-body-util",
  "md-5",
  "rusqlite",
  "serde",
  "serde_json",
+ "task-contract",
  "tempfile",
  "thiserror",
  "tokio",
@@ -696,23 +697,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "orchestrator-core"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
-
-[[package]]
-name = "perception-sim"
-version = "0.1.0"
 
 [[package]]
 name = "pin-project-lite"
@@ -812,18 +800,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
 
 [[package]]
-name = "regex"
-version = "1.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f020237b6c8eed93db2e2cb53c00c60a8e1bc73da7d073199a1180401450218d"
-dependencies = [
- "aho-corasick",
- "memchr",
- "regex-automata",
- "regex-syntax",
-]
-
-[[package]]
 name = "regex-automata"
 version = "0.4.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -889,14 +865,6 @@ name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
-
-[[package]]
-name = "safety"
-version = "0.1.0"
-dependencies = [
- "device-sdk",
- "thiserror",
-]
 
 [[package]]
 name = "sensor-contract"
@@ -1484,15 +1452,6 @@ name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
-
-[[package]]
-name = "world-model"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror",
-]
 
 [[package]]
 name = "zerocopy"

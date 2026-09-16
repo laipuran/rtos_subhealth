@@ -1,4 +1,0 @@
-# Stop all motion and enter the device's safe state.
----
-bool stopped
-string message

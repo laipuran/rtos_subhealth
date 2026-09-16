@@ -1,0 +1,16 @@
+[package]
+name = "fake-endpoint-adapter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+domain-contract = { path = "../../../contracts/domain-contract" }
+endpoint-runtime = { path = "../../endpoint-runtime" }
+execution-contract = { path = "../../../contracts/execution-contract" }
+serde_json.workspace = true
+
+[[bin]]
+name = "endpoint-runtime"
+path = "src/main.rs"

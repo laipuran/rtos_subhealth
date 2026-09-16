@@ -1,4 +1,7 @@
-# RFC 010：Rust-first 与 ROS 2 Jazzy 迁移
+# RFC 010：Rust-first 与 ROS 2 Jazzy 迁移（历史归档）
+
+> **已 superseded：** 本 RFC 描述的中间迁移结构不再是当前实现；请参阅
+> `docs/architecture/`。
 
 **状态：** 已实施，持续收敛
 

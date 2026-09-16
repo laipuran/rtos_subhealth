@@ -9,13 +9,9 @@ members = [
     "services/sensor",
     "services/execution",
     "services/orchestration",
+    "adapters/endpoint-runtime",
+    "adapters/endpoint-adapters/fake",
     "services/gateway",
-    "services/diagnosis",
-    "services/orchestrator-core",
-    "services/device-sdk",
-    "services/world-model",
-    "services/safety",
-    "services/perception-sim",
 ]
 exclude = ["ros2_ws"]
 

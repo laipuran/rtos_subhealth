@@ -1,28 +1,17 @@
 #!/usr/bin/env bash
-# Run the orchestrator plus one device adapter.
-#
-# Prereqs: source ROS and the built workspaces first, e.g.
-#   source /opt/ros/jazzy/setup.bash
-#   source "$ROS_RUST_WS/install/setup.bash"
-#   source "$ROS_RUST_WS/install_nodes/setup.bash"
-#
-# Environment:
-#   DEVICE_ID    (default: mock)
-#   DEVICE_TYPE  mock | diff_drive | tonypi (default: mock)
-#   TONYPI_RPC_URL (only for DEVICE_TYPE=tonypi)
-set -eo pipefail
+set -euo pipefail
 
-DEVICE_ID="${DEVICE_ID:-mock}"
-DEVICE_TYPE="${DEVICE_TYPE:-mock}"
-export DEVICE_ID DEVICE_TYPE
-
-ros2 run adapter adapter &
-ADAPTER_PID=$!
-ros2 run orchestrator orchestrator &
-ORCH_PID=$!
-
-cleanup() { kill "$ADAPTER_PID" "$ORCH_PID" 2>/dev/null || true; }
-trap cleanup INT TERM EXIT
-
-echo "[run] adapter DEVICE_ID=$DEVICE_ID DEVICE_TYPE=$DEVICE_TYPE, orchestrator"
-wait
+MODE="${1:-server}"
+case "$MODE" in
+  server)
+    exec cargo run -p gateway
+    ;;
+  endpoint)
+    : "${DEVICE_TYPE:?usage: deploy/run_stack.sh endpoint DEVICE_TYPE=<device-type>}"
+    echo "endpoint runtime is selected by DEVICE_TYPE=${DEVICE_TYPE}"
+    ;;
+  *)
+    echo "usage: deploy/run_stack.sh server|endpoint" >&2
+    exit 2
+    ;;
+esac
