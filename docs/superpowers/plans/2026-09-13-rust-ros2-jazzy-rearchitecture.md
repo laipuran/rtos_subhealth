@@ -1,22 +1,33 @@
-# Rust-first / ROS 2 Jazzy Industrial Rearchitecture — Implementation Plan
+# Rust-first / ROS 2 Jazzy 工业化重构——实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供自动化执行者使用：** 建议使用逐任务的子代理开发或计划执行流程。
+> 步骤使用复选框（`- [ ]`）跟踪。
 
-**Goal:** Replace the Python/Flask/Foxy codebase with a Rust-first, ROS 2 Jazzy, industrially deployable system without losing GO2 compatibility.
+**目标：** 在保留 GO2 兼容性的前提下，将 Python/Flask/Foxy 代码库替换为
+Rust-first、ROS 2 Jazzy 且可工业化部署的系统。
 
-**Architecture:** A single Cargo workspace hosts the Rust application services (`gateway`, `diagnosis`) and the ROS nodes (`robot_driver`, `control`, `perception`, `sim`). ROS interfaces stay rosidl and are code-generated into Rust via `rclrs`/`rosidl_rust`. The robot hardware boundary is isolated behind a `RobotBackend` trait so the 500 Hz Unitree path can fall back to C++ if the Phase 0 spike fails. HTTP/WS contract is preserved so the WebUI is untouched. Deployment is per-package `.deb` → signed apt → systemd, with RAUC A/B OTA.
+**架构：** 单一 Cargo workspace 承载 Rust 应用服务（`gateway`、`diagnosis`）和
+ROS 节点（`robot_driver`、`control`、`perception`、`sim`）。ROS 接口继续使用
+rosidl，并通过 `rclrs`/`rosidl_rust` 生成 Rust 绑定。机器人硬件边界通过
+`RobotBackend` trait 隔离，以便 Phase 0 spike 失败时将 Unitree 500 Hz 路径回退到
+C++。HTTP/WS 契约保持不变，因此 WebUI 无需修改。部署采用每包 `.deb` → 签名 apt
+→ systemd，并使用 RAUC A/B OTA。
 
-**Tech Stack:** Rust 1.85+ (pinned), `rclrs` 0.7, ROS 2 Jazzy / Ubuntu 24.04, `axum` 0.8, `tokio`, `tokio-tungstenite`, `rusqlite`, `async-openai`, `opencv`, `nokhwa`, `mujoco-rs`, React/Vite (existing), Docker, colcon-cargo, bloom, aptly, systemd, RAUC.
+**技术栈：** Rust 1.85+（固定版本）、`rclrs` 0.7、ROS 2 Jazzy/Ubuntu 24.04、
+`axum` 0.8、`tokio`、`tokio-tungstenite`、`rusqlite`、`async-openai`、`opencv`、
+`nokhwa`、`mujoco-rs`、现有 React/Vite、Docker、colcon-cargo、bloom、aptly、
+systemd、RAUC。
 
 **Spec:** `docs/superpowers/specs/2026-09-13-rust-ros2-jazzy-rearchitecture-design.md`
 
-## Global Constraints
+## 全局约束
 
 - Target runtime: ROS 2 **Jazzy** on **Ubuntu 24.04**, `rmw_cyclonedds_cpp`, `ROS_DOMAIN_ID=1`.
 - Rust toolchain pinned in `rust-toolchain.toml`; `edition = "2021"`, MSRV 1.85.
 - HTTP/WS contract (RFC-005/006/009) must not change: paths, `{error:{code,message,details}}`, pagination `offset`/`limit` (limit ≤ 200), ETag on `/api/v1/map`, `X-Trace-Id`, `X-API-Key` auth.
 - Interface packages are the single source of contract truth.
-- No new Python production code. Existing Python is retired package-by-package.
+- 控制平面不新增 Python 生产代码；机器人端因厂商 SDK 要求可以新增独立的
+  Python adapter（例如 TonyPi `tonypi-exec`），但不得进入 Rust 核心请求链路。
 - Every Rust crate compiles and tests with plain `cargo test` unless it is explicitly `--features ros`.
 - No secrets in the repo or in built artifacts; runtime secrets via systemd credentials.
 - Phase 0 gate: the Rust `UnitreeBackend` must be validated end-to-end against GO2/MuJoCo before Phase 3 hardware code merges.

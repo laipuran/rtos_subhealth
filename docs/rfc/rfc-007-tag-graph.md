@@ -1,4 +1,6 @@
-> **[已过时 / Superseded]** 本文档描述旧的 Python / ROS 2 Foxy 实现，已被 Rust-first / ROS 2 Jazzy 架构取代。当前架构见 `docs/tech/tech-current-architecture.md` 与 `README.md`；语言范围与设备契约见 `docs/tech/adr-001-language-scope.md`、`docs/tech/adr-002-device-contract.md`。旧实现保留在 `legacy/`，仅作参考。
+> **[部分替代 / Partially superseded]** Tag graph、地图 API 和 WebUI 编辑语义
+> 仍然适用；本文中的 `Desc Layer`、旧 exec 流程和 GO2 专用执行假设已被当前
+> `gateway`、`orchestrator` 和设备能力契约替代。
 
 ## RFC 007: Tag Graph 数据格式与可视化编辑
 
@@ -32,7 +34,7 @@
 **非目标：**
 1. 不定义机器人底层控制与 SportClient 接口（见 RFC 008）。
 2. 不实现地图自动建图（Tag 图由人工编辑）。
-3. 不替代 desc_layer 的 HTTP 网关职责（见 RFC 005）。
+3. 不替代 gateway 的 HTTP 网关职责（见 RFC 005）。
 4. 不定义 AprilTag 感知协议（见 RFC 001）。
 5. 暂不支持多场景管理（多文件 + `?scene=` 参数已预留目录结构，逻辑待后续实现，见 5.1）。
 

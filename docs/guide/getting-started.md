@@ -1,6 +1,6 @@
 # 操作手册
 
-> 本仓库已迁移到 **Rust + ROS 2 Jazzy**。旧的 Python / ROS 2 Foxy 实现
+> 控制电脑已迁移到 **Rust + ROS 2 Jazzy**。旧的 Python / ROS 2 Foxy 实现
 > （`desc_layer`、`exec_layer`、`mock_exec_layer`、`planner` 等）已退役并移入
 > `legacy/`，仅作参考，不再构建或运行。
 >
@@ -16,7 +16,7 @@ make help
 
 | 组件 | 说明 |
 | --- | --- |
-| Docker + Docker Compose | ROS / Rust 工具链全部在容器内，host 不安装 ROS |
+| Docker + Docker Compose | 控制电脑上的 ROS / Rust 开发工具链；机器人端不使用此开发容器 |
 | VS Code + [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) 扩展 | 推荐；容器内自带 rust-analyzer |
 | Rust 1.85（可选，host） | 只在不使用 Dev Container 时跑纯 Rust 服务测试需要 |
 | Node.js 24 LTS / pnpm 9（可选，host） | 仅直接绕过 Dev Container 时需要；容器内已提供 |
@@ -92,7 +92,7 @@ curl localhost:5000/api/v1/tasks
 
 ---
 
-## 4. ROS 接口与节点
+## 4. ROS 接口与节点（控制电脑）
 
 接口用 rosidl 定义在 `ros2_ws/src/robot/interfaces/`，节点是独立的 rclrs crate
 （每个节点是一个部署单元）。
@@ -127,17 +127,25 @@ make ros
 make run-stack
 ```
 
-`deploy/run_stack.sh` 会同时启动 `orchestrator` 与一个 `adapter`。可覆盖：
+`deploy/run_stack.sh` 会同时启动 `orchestrator` 与一个通用 adapter，用于控制电脑上的软件验证。可覆盖：
 
 ```bash
 DEVICE_TYPE=mock make run-stack        # 默认，纯软件
 DEVICE_TYPE=diff_drive make run-stack  # 内置差速仿真
-DEVICE_TYPE=tonypi make run-stack      # 真机，需 TONYPI_RPC_URL
+DEVICE_TYPE=tonypi make run-stack      # 控制电脑 JSON-RPC 兼容路径，不等同于 RPi4B SDK exec
 ```
 
 运行前需先 `make ros`（脚本会 source `/ws/install` 与 `/ws/install_nodes`）。
 其他节点（`gateway_bridge`、`diagnosis_node`、`physio_mock`、`perception_*`）可按
 需用 `ros2 run <pkg> <node>` 单独启动，用于调试。
+
+### 5.1 TonyPi 实机端
+
+TonyPi RPi4B 不运行 WebUI、gateway 或 orchestrator。它运行 Ubuntu 22.04、
+ROS 2 Humble 和独立的 Python `tonypi-exec` systemd 服务。该服务加载
+TonyPi Python SDK，遵循 `device_interfaces` / `task_interfaces` 的 ROS2
+契约，并在本地执行 stop、watchdog 和 SDK 故障处理。控制电脑与 RPi4B
+之间的 DDS/消息兼容性需要通过实机验证。
 
 ---
 

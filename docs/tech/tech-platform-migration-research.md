@@ -1,24 +1,36 @@
-# Platform Migration Research: Unitree GO2, ROS 2 Distros, and Rust
+# 平台迁移研究：Unitree GO2、ROS 2 发行版与 Rust
 
-**Prepared:** 2026-09-13
-**Scope:** primary-source investigation for (a) whether the GO2 constrains the ROS 2 distro, (b) whether a Rust migration is viable, and (c) how to package and deploy ROS 2 workloads to edge robots.
-**Method:** official docs, upstream GitHub repos/READMEs/CHANGELOGs, `crates.io`/PyPI metadata APIs, REP-2000. Every non-obvious claim is cited with a URL. Claims that could not be tied to a retrievable primary source are explicitly marked **[unverified]**.
+**编写日期：** 2026-09-13
+**范围：** 基于一手资料研究：(a) GO2 是否限制 ROS 2 发行版；(b) Rust 迁移是否可行；
+(c) 如何将 ROS 2 工作负载打包并部署到机器人端点。
+**方法：** 查阅官方文档、上游 GitHub 仓库/README/CHANGELOG、`crates.io`/PyPI
+元数据 API 和 REP-2000。每个非显然结论均附 URL；无法关联到可检索一手来源的结论
+明确标记为 **[未验证]**。
 
-> **Version snapshot used throughout.** Where a number is load-bearing, the source date is given. The live `endoflife.date` page used for ROS EOL data was last updated 2026-07-26; `rclrs 0.7.0` was published 2026-01-18; `unitree_ros2` `version.txt` = `0.3.0`.
-
----
-
-## TL;DR (full reasoning in the Bottom Line section)
-
-1. **The GO2 is not tied to Foxy.** Unitree's own `unitree_ros2` README lists Ubuntu 20.04/Foxy and Ubuntu 22.04/Humble (recommended), and the robot link is at the **DDS level (CycloneDDS 0.10.2)**, not at the ROS-distro level. Foxy is EOL since 2023.
-2. **A full Rust rewrite is not ready as a single step**, but a **mixed C++/Rust/Python architecture is viable**, and a **Rust drop-in that speaks DDS directly to Unitree topics is technically viable today** (cyclonedds-rust / rustdds / dust_dds). ROS-native Rust (`rclrs`) supports Humble→Rolling, **not Foxy**.
-3. **Recommended deployment model:** target **ROS 2 Jazzy on Ubuntu 24.04** for the long-lived LTS, build **signed `.deb`s with `bloom`**, host a **signed apt repo (aptly/reprepro) with version pinning**, run nodes as **systemd services with journald + systemd credentials**, and use **A/B image updates (RAUC or Mender)** rather than in-place apt upgrades on the robot.
+> **版本快照。** 对关键数字给出来源日期。ROS EOL 使用的 `endoflife.date` 页面最后于
+> 2026-07-26 更新；`rclrs 0.7.0` 发布于 2026-01-18；`unitree_ros2` 的
+> `version.txt` 为 `0.3.0`。
 
 ---
 
-## A. Unitree GO2 compatibility and constraints
+## 摘要（完整论证见“结论”部分）
 
-### A1. What must actually match between the control PC and the GO2?
+1. **GO2 不绑定 Foxy。** Unitree 的 `unitree_ros2` README 同时列出 Ubuntu 20.04/Foxy
+   和 Ubuntu 22.04/Humble（推荐）；机器人连接在 **DDS 层（CycloneDDS 0.10.2）**，
+   而不是 ROS 发行版层。Foxy 自 2023 年起已结束支持。
+2. **不能一步完成完整 Rust 重写**，但 C++/Rust/Python 混合架构可行；直接通过 DDS
+   访问 Unitree topic 的 Rust 替代实现目前也具备技术可行性。原生 ROS Rust
+   (`rclrs`) 支持 Humble 到 Rolling，不支持 Foxy。
+3. **推荐部署模型：** 长期目标为 Ubuntu 24.04 上的 ROS 2 Jazzy；使用 `bloom`
+   构建签名 `.deb`，维护带版本固定的签名 apt 仓库，使用 systemd/journald/systemd
+   credentials 管理节点，并使用 RAUC 或 Mender 的 A/B 镜像更新，而不是在机器人上
+   直接执行 apt 升级。
+
+---
+
+## A. Unitree GO2 兼容性与约束
+
+### A1. 控制电脑与 GO2 实际需要匹配什么？
 
 The coupling is **CycloneDDS + the Unitree message/IDL layer**, *not* a specific ROS 2 distribution.
 

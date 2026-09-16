@@ -1,8 +1,9 @@
 # ROS Subhealth
 
-Medical-inspection robot control system for a Unitree GO2. Tasks are dispatched
-through a web UI and an HTTP/WS gateway, planned over a tag graph, executed on
-the robot, and augmented with LLM-driven physiological diagnosis.
+Multi-device medical-inspection robot control system. Tasks are dispatched
+through a web UI and an HTTP/WS gateway, planned over a tag graph when supported,
+executed on a robot endpoint, and augmented with LLM-driven physiological
+diagnosis.
 
 This repository is mid-migration: the legacy Python/ROS 2 Foxy stack is being
 replaced by a Rust-first stack on ROS 2 Jazzy / Ubuntu 24.04. See
@@ -13,20 +14,20 @@ replaced by a Rust-first stack on ROS 2 Jazzy / Ubuntu 24.04. See
 ```mermaid
 flowchart LR
     WEB[WebUI React/Vite] -->|HTTP/WS| GW[gateway Rust/axum]
-    GW -->|ExecTask action| CTL[control C++/Rust]
-    CTL -->|PlanPath| PLAN[planner]
-    CTL -->|RobotBackend| DRV[robot_driver]
-    DRV -->|rt/lowcmd, rt/sportmodestate| GO2[(GO2 / MuJoCo)]
+    GW -->|DeviceTask / ExecTask bridge| CTL[orchestrator Rust]
+    CTL -->|PlanPath| PLAN[world-model]
+    CTL -->|device contract| EXEC[robot endpoint exec]
+    EXEC -->|vendor SDK / driver| ROBOT[(robot / simulation)]
     PER[perception] -->|AprilTagDetections| CTL
     DIAG[diagnosis Rust] -->|DiagnosisResult| GW
     PHYS[physio sensors] -->|PhysioSample| DIAG
 ```
 
-- **Language:** Rust-first. The only isolated exception is the Unitree hardware
-  boundary, kept behind the `RobotBackend` trait so it can fall back to C++ if
-  the Phase 0 DDS spike requires it.
-- **Runtime:** ROS 2 Jazzy on Ubuntu 24.04, `rmw_cyclonedds_cpp`. The GO2 is
-  coupled at the DDS layer, not to a ROS distro (see research doc).
+- **Language:** Rust-first for the control plane. Device-side exec/adapters may
+  be Rust, C++, or Python when required by the vendor SDK or real-time stack.
+- **Runtime:** the control PC uses ROS 2 Jazzy on Ubuntu 24.04; the TonyPi
+  endpoint uses ROS 2 Humble on Ubuntu 22.04. Interoperability is verified at
+  the shared ROS/DDS contract boundary.
 - **Tooling:** all ROS/Rust tooling runs in Docker; nothing is installed on the
   host.
 
@@ -36,12 +37,13 @@ flowchart LR
 services/gateway/     Rust HTTP/WS gateway (replaces desc_layer)
 services/diagnosis/   Rust aggregation + anomaly + RAG + LLM core
 services/orchestrator-core/  Rust task routing + device registry (pure logic)
-services/device-sdk/  Rust adapter contract + mock / diff-drive / TonyPi backends
+services/device-sdk/  Rust adapter contract + mock / diff-drive backends
 services/world-model/ Rust graph map loader + Dijkstra planner
 services/safety/      Rust velocity limits, watchdog, emergency stop
 services/perception-sim/  Rust geometry AprilTag detector
 ros2_ws/src/robot/interfaces/     ROS 2 interfaces (no prefix)
-ros2_ws/src/robot/adapter/        rclrs device adapter (mock / diff_drive / tonypi)
+ros2_ws/src/robot/adapter/        rclrs generic device adapter
+robot-endpoints/tonypi-exec/      Python ROS 2 Humble adapter + TonyPi SDK
 ros2_ws/src/robot/orchestrator/   rclrs orchestrator (discovery + routing)
 ros2_ws/src/robot/gateway_bridge/ gateway HTTP/WS + ROS bridge
 ros2_ws/src/robot/diagnosis_node/ diagnosis ROS node
@@ -117,9 +119,10 @@ Full walkthrough: [`docs/guide/getting-started.md`](docs/guide/getting-started.m
 | Device interfaces (`device_interfaces`, `DeviceTask`) | built and verified in container |
 | Orchestrator core (pure logic) | implemented + tested (`services/orchestrator-core`) |
 | Device adapter SDK (mock + diff-drive sim) | implemented + tested (`services/device-sdk`) |
-| rclrs adapter node (mock / diff_drive / tonypi, `DeviceTask` action) | builds in Jazzy container; mock + TonyPi paths verified end-to-end |
-| rclrs orchestrator node (discovery + routing) | builds; mock and TonyPi vertical slices verified end-to-end |
-| TonyPi backend (JSON-RPC `RunAction`) | implemented + tested (`services/device-sdk/src/tonypi.rs`) |
+| rclrs generic adapter node (mock / diff_drive, `DeviceTask` action) | builds in Jazzy container; mock path verified end-to-end |
+| rclrs orchestrator node (discovery + routing) | builds; generic adapter vertical slice verified end-to-end |
+| TonyPi control-PC JSON-RPC backend | retained for compatibility/simulation |
+| TonyPi RPi4B Python SDK exec | endpoint implementation and hardware validation pending |
 | World model + Dijkstra planner | implemented + tested (`services/world-model`) |
 | Safety supervisor (limits/watchdog/estop) | implemented + tested (`services/safety`) |
 | Physio mock + diagnosis ROS nodes | built; anomaly result verified end-to-end |
@@ -141,4 +144,6 @@ Full walkthrough: [`docs/guide/getting-started.md`](docs/guide/getting-started.m
 - Implementation plan: `docs/superpowers/plans/2026-09-13-rust-ros2-jazzy-rearchitecture.md`
 - Platform research: `docs/tech/tech-platform-migration-research.md`
 - TonyPi recon: `deploy/spikes/tonypi_interface.md`
+- Rust migration: `docs/rfc/rfc-010-rust-migration.md`
+- TonyPi endpoint contract: `docs/rfc/rfc-011-tonypi-exec.md`
 - RFCs: `docs/rfc/` (older RFCs carry a "superseded" banner)

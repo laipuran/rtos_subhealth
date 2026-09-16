@@ -1,4 +1,7 @@
-> **[已过时 / Superseded]** 本文档描述旧的 Python / ROS 2 Foxy 实现，已被 Rust-first / ROS 2 Jazzy 架构取代。当前架构见 `docs/tech/tech-current-architecture.md` 与 `README.md`；语言范围与设备契约见 `docs/tech/adr-001-language-scope.md`、`docs/tech/adr-002-device-contract.md`。旧实现保留在 `legacy/`，仅作参考。
+> **[部分替代 / Partially superseded]** 本文仍保留任务生命周期、feedback/result
+> 和 WebUI 到控制层的语义；旧的 Python/Foxy action 名称、路径和字段定义已被
+> 当前 `task_interfaces/DeviceTask.action` 与 `ExecTask.action` 替代。当前架构见
+> `docs/tech/tech-current-architecture.md`。
 
 ## RFC 003: 决策层动作任务流
 
@@ -38,7 +41,8 @@
 ## 5. 关键接口
 **Action 名称：** `task`
 
-**消息位置：** `ros2_ws/src/orchestration/task_flow_interfaces/action/Task.action`
+**当前消息位置：** `ros2_ws/src/robot/interfaces/task_interfaces/action/DeviceTask.action`
+（控制层兼容入口为 `ExecTask.action`）。
 
 **Goal 字段：**
 | 字段 | 类型 | 说明 |

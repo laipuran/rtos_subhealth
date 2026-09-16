@@ -48,8 +48,12 @@
 
 用户倾向全 Rust 并授权由工程判断决定。结论：**Rust-first**。
 
-- 全部 ROS 节点、网关、诊断、感知、模拟器均为 Rust（`rclrs` + `cargo`）。
-- **唯一例外**是 Unitree 硬件边界：定义 `RobotBackend` trait，实现放在 `robot_driver` crate。
+- 控制电脑上的 ROS 节点、网关、诊断、感知和模拟器默认使用 Rust
+  （`rclrs` + `cargo`）。
+- **设备端执行是独立边界。** 当厂商 SDK 只有 Python 时，允许在机器人端运行
+  独立 Python adapter；它不属于 Rust 核心请求链路，也不使用进程内 FFI。
+- Unitree 等设备的硬件边界仍可定义 `RobotBackend` trait，实现放在对应 adapter
+  crate 或独立进程中。
   - 默认实现：Rust 通过 `rclrs` 发布/订阅 `unitree_ros2` 提供的 ROS 消息（`LowCmd`/`SportModeState`/`unitree_api`）。
   - 回退实现（仅当 Phase 0 spike 失败）：一个极薄的 C++ `unitree_sdk2` shim，通过进程内 FFI 或独立 DDS 进程暴露同样接口。
 - 这样既满足"全 Rust 的可维护性收益"，又不把 500 Hz 安全关键路径押在未验证的绑定上。

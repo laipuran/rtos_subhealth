@@ -1,6 +1,8 @@
-> **[已过时 / Superseded]** 本文档描述旧的 Python / ROS 2 Foxy 实现，已被 Rust-first / ROS 2 Jazzy 架构取代。当前架构见 `docs/tech/tech-current-architecture.md` 与 `README.md`；语言范围与设备契约见 `docs/tech/adr-001-language-scope.md`、`docs/tech/adr-002-device-contract.md`。旧实现保留在 `legacy/`，仅作参考。
+> **[部分替代]** 本文的生理数据、诊断结果、RAG/LLM 和 WebUI 语义仍然有效；
+> 实现已从 Python `diagnosis_layer`/`desc_layer` 迁移为 Rust `diagnosis`/
+> `gateway`。当前组件和部署以 `docs/tech/tech-current-architecture.md` 为准。
 
-# RFC 009: 生理传感数据驱动的 LLM 健康诊断层
+# RFC 009：生理传感数据驱动的 LLM 健康诊断层
 
 **状态：** 草案
 

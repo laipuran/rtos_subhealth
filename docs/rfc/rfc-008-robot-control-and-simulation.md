@@ -1,4 +1,6 @@
-> **[已过时 / Superseded]** 本文档描述旧的 Python / ROS 2 Foxy 实现，已被 Rust-first / ROS 2 Jazzy 架构取代。当前架构见 `docs/tech/tech-current-architecture.md` 与 `README.md`；语言范围与设备契约见 `docs/tech/adr-001-language-scope.md`、`docs/tech/adr-002-device-contract.md`。旧实现保留在 `legacy/`，仅作参考。
+> **[设备专用/历史参考]** 本文主要描述 GO2、SportClient、LowCmd 和旧 Python
+> exec_layer。它不定义通用设备 exec 契约；通用契约见 `adr-002`。其中 MuJoCo
+> 和 AprilTag 仿真部分仍可作为 GO2 仿真参考，不适用于 TonyPi。
 
 ## RFC 008: 执行层机器人控制与仿真对接
 

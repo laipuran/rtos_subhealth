@@ -1,4 +1,7 @@
-> **[已过时 / Superseded]** 本文档描述旧的 Python / ROS 2 Foxy 实现，已被 Rust-first / ROS 2 Jazzy 架构取代。当前架构见 `docs/tech/tech-current-architecture.md` 与 `README.md`；语言范围与设备契约见 `docs/tech/adr-001-language-scope.md`、`docs/tech/adr-002-device-contract.md`。旧实现保留在 `legacy/`，仅作参考。
+> **[部分替代 / Partially superseded]** 本文的 `PlanRequest`/旧 `task` action
+> 定义已被当前 rosidl 接口替代；`current_tag`、`next_tag`、segments 和错误
+> 语义可作为规划与 UI 约定的历史参考。当前设备无关任务契约见
+> `task_interfaces/DeviceTask.action` 与 `device_interfaces/TaskTarget.msg`。
 
 ## RFC 004: 决策层到执行层的规划字段说明
 

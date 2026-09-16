@@ -1,4 +1,6 @@
-> **[已过时 / Superseded]** 本文档描述旧的 Python / ROS 2 Foxy 实现，已被 Rust-first / ROS 2 Jazzy 架构取代。当前架构见 `docs/tech/tech-current-architecture.md` 与 `README.md`；语言范围与设备契约见 `docs/tech/adr-001-language-scope.md`、`docs/tech/adr-002-device-contract.md`。旧实现保留在 `legacy/`，仅作参考。
+> **[部分替代 / Partially superseded]** 本文的 WebUI 不直连 DDS、HTTP/WS
+> endpoint 和任务状态语义仍适用；服务名称 `desc_layer` 已改为 Rust
+> `gateway`，字段以 `webui/src/types/task.ts` 和实际 API 为准。
 
 ## RFC 006: WebUI 任务操作界面
 
@@ -7,7 +9,7 @@
 **修订日期：** 2026-05-22
 
 ## 1. 摘要
-WebUI 提供任务下发与任务状态展示，仅通过 desc_layer 的 HTTP/WS 接口访问系统，不直接访问 ROS2 DDS。
+WebUI 提供任务下发与任务状态展示，仅通过 gateway 的 HTTP/WS 接口访问系统，不直接访问 ROS2 DDS。
 
 ---
 
@@ -20,7 +22,7 @@ WebUI 提供任务下发与任务状态展示，仅通过 desc_layer 的 HTTP/WS
 **非目标：**
 1. 不直接访问 ROS2 DDS。
 2. 不在 WebUI 中实现执行层控制逻辑。
-3. 不替代 desc_layer 的任务校验与状态聚合。
+3. 不替代 gateway 的任务校验与状态聚合。
 
 ---
 
@@ -30,8 +32,8 @@ WebUI 与机器人常处于不同网络，直接访问 ROS2 DDS 不可行，需�
 ---
 
 ## 4. 方案概览
-WebUI 通过 desc_layer 的 HTTP/WS 接口完成任务下发与状态订阅。
-数据流：WebUI -> desc_layer -> `task` action -> 执行层 -> desc_layer -> WebUI。
+WebUI 通过 gateway 的 HTTP/WS 接口完成任务下发与状态订阅。
+数据流：WebUI -> gateway -> orchestrator -> endpoint exec -> gateway -> WebUI。
 
 ---
 
@@ -70,7 +72,7 @@ WebUI 通过 desc_layer 的 HTTP/WS 接口完成任务下发与状态订阅。
    - **权衡：** 延迟更低，但跨网段部署困难。
 2. **替代方案：** 使用 gRPC 代替 HTTP/WS。
    - **权衡：** 接口更强，但前端接入成本更高。
-3. **风险：** desc_layer 不可用会导致 WebUI 无法下发任务。
+3. **风险：** gateway 不可用会导致 WebUI 无法下发任务。
 
 ---
 

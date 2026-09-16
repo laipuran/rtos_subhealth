@@ -1,4 +1,6 @@
-> **[已过时 / Superseded]** 本文档描述旧的 Python / ROS 2 Foxy 实现，已被 Rust-first / ROS 2 Jazzy 架构取代。当前架构见 `docs/tech/tech-current-architecture.md` 与 `README.md`；语言范围与设备契约见 `docs/tech/adr-001-language-scope.md`、`docs/tech/adr-002-device-contract.md`。旧实现保留在 `legacy/`，仅作参考。
+> **[部分替代 / Partially superseded]** 本文的 HTTP/WS 外部契约仍适用，
+> 但 `desc_layer` 已由 Rust `gateway` 替代，旧的 `task` action 描述应以
+> 当前 `DeviceTask`/`ExecTask` bridge 实现为准。
 
 ## RFC 005: Desc Layer 服务与对外接口
 
@@ -13,13 +15,13 @@
 | 2026-07-21 | 补充 API 规范：错误格式、分页、ETag、trace_id、鉴权格式 |
 
 ## 1. 摘要
-desc_layer 负责把跨网段请求转成 ROS2 `task` action，并汇总执行状态对外发布。它部署在 `ros2_ws/src/orchestration/desc_layer`，通过 HTTP/WS 提供 WebUI 与其他上层调用入口。
+gateway 负责把跨网段请求转换为 ROS2 task action，并汇总执行状态对外发布。它运行在控制电脑上，通过 HTTP/WS 提供 WebUI 与其他上层调用入口。
 
 ---
 
 ## 2. 目标与非目标
 **目标：**
-1. 统一对外任务入口，所有任务经 desc_layer 下发。
+1. 统一对外任务入口，所有任务经 gateway 下发。
 2. 提供 HTTP/WS 接口，支持跨网段访问。
 3. 汇总并推送任务状态，便于 WebUI 展示。
 
@@ -32,13 +34,13 @@ desc_layer 负责把跨网段请求转成 ROS2 `task` action，并汇总执行�
 ---
 
 ## 3. 现状与痛点
-WebUI 与外部系统处在不同网段时，无法直接使用 ROS2 DDS。没有 desc_layer 会导致任务入口分散，调用方式不统一。
+WebUI 与外部系统处在不同网段时，无法直接使用 ROS2 DDS。没有 gateway 会导致任务入口分散，调用方式不统一。
 
 ---
 
 ## 4. 方案概览
-desc_layer 作为唯一入口接收 HTTP/WS 请求，转成 `task` action，并把反馈与结果聚合后推送给 WebUI。
-数据流：WebUI/外部系统 -> desc_layer -> `task` action -> 执行层 -> desc_layer -> WebUI。
+gateway 作为唯一入口接收 HTTP/WS 请求，转成当前任务 action，并把反馈与结果聚合后推送给 WebUI。
+数据流：WebUI/外部系统 -> gateway -> orchestrator -> endpoint exec -> gateway -> WebUI。
 
 ---
 
@@ -154,7 +156,7 @@ X-API-Key: my-secret-token
 - Token 为空字符串时，鉴权关闭（开发环境默认）。
 - Token 非空时，所有 HTTP 请求必须携带匹配的 `X-API-Key`，否则返回 `401 UNAUTHORIZED`。
 - WebSocket 连接时，首个消息应为 Token 字符串；否则服务端关闭连接。
-- Token 通过 desc_layer 的 ROS2 参数 `api_token` 配置。
+- Token 通过 gateway 的配置项 `api_token` 配置。
 
 ### 5.4 状态字段约定
 
@@ -163,10 +165,10 @@ X-API-Key: my-secret-token
 ---
 
 ## 6. 数据/控制流
-1. desc_layer 接收 HTTP/WS 请求并校验字段，生成 `trace_id`。
+1. gateway 接收 HTTP/WS 请求并校验字段，生成 `trace_id`。
 2. 鉴权开启时校验 `X-API-Key`；不匹配则返回 401。
-3. desc_layer 作为 action client 下发 `task`。
-4. desc_layer 聚合 feedback/result 并推送 WebUI（WebSocket 消息携带 `trace_id`）。
+3. gateway 通过 orchestrator 下发当前任务 action。
+4. gateway 聚合 feedback/result 并推送 WebUI（WebSocket 消息携带 `trace_id`）。
 5. 任务记录通过 SQLite 持久化，重启不丢失。
 
 ---
@@ -176,7 +178,7 @@ X-API-Key: my-secret-token
    - **权衡：** 延迟低，但跨网段部署困难。
 2. **替代方案：** 使用 gRPC 网关代替 HTTP/WS。
    - **权衡：** 接口更强，但实现与运维成本更高。
-3. **风险：** desc_layer 单点不可用会影响任务入口。
+3. **风险：** gateway 单点不可用会影响任务入口。
 
 ---
 
@@ -185,7 +187,7 @@ X-API-Key: my-secret-token
 | 测试 | 通过标准 |
 |---|---|
 | 任务下发/取消 | WebUI 可通过 HTTP/WS 正常下发与取消任务 |
-| Action 转发 | desc_layer 能正确转发 `task` action 并接收反馈 |
+| Action 转发 | gateway/orchestrator 能正确转发当前 task action 并接收反馈 |
 | 实时推送 | WebUI 能收到 `finished_stage/total_stage` 与终态结果 |
 | 错误格式 | 不合法请求返回统一 `{error: {code, message}}` 格式 |
 | 分页 | `?offset=&limit=` 参数生效，响应含 `total/offset/limit` |
