@@ -1,0 +1,11 @@
+[package]
+name = "event-contract"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+domain-contract = { path = "../domain-contract" }
+serde.workspace = true
+task-contract = { path = "../task-contract" }
