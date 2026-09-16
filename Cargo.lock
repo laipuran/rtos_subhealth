@@ -276,6 +276,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "execution-service"
+version = "0.1.0"
+dependencies = [
+ "domain-contract",
+ "execution-contract",
+ "futures-util",
+ "sensor-contract",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "fallible-iterator"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -880,6 +892,16 @@ dependencies = [
  "domain-contract",
  "futures-core",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "sensor-service"
+version = "0.1.0"
+dependencies = [
+ "domain-contract",
+ "futures-util",
+ "sensor-contract",
  "serde_json",
 ]
 
