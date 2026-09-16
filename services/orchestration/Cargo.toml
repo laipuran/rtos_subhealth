@@ -1,0 +1,17 @@
+[package]
+name = "orchestration-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+domain-contract = { path = "../../contracts/domain-contract" }
+execution-contract = { path = "../../contracts/execution-contract" }
+sensor-contract = { path = "../../contracts/sensor-contract" }
+task-contract = { path = "../../contracts/task-contract" }
+thiserror.workspace = true
+
+[dev-dependencies]
+futures-util = "0.3"
+serde_json.workspace = true

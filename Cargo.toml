@@ -8,6 +8,7 @@ members = [
     "contracts/event-contract",
     "services/sensor",
     "services/execution",
+    "services/orchestration",
     "services/gateway",
     "services/diagnosis",
     "services/orchestrator-core",
