@@ -1,19 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
-    "contracts/domain-contract",
-    "contracts/task-contract",
-    "contracts/execution-contract",
-    "contracts/sensor-contract",
-    "contracts/event-contract",
+    "services/platform",
     "services/sensor",
     "services/execution",
     "services/orchestration",
-    "adapters/endpoint-runtime",
-    "adapters/endpoint-adapters/fake",
     "services/gateway",
 ]
-exclude = ["ros2_ws"]
 
 [workspace.package]
 version = "0.1.0"

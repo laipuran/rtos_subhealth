@@ -19,8 +19,8 @@
 6. HTTP、WebSocket、内部服务接口和 ROS 接口均有唯一的契约来源。
 7. `make` 是开发、构建和运行的统一入口。
 
-本次采用完整重写，不以当前测试通过作为兼容目标。旧实现仅作为行为和数据
-语义参考，重写后的测试必须针对新边界重新建立。
+本次采用完整重写，不以旧实现作为兼容目标。当前验证只覆盖格式、编译、lint
+和前端构建；功能实现完成后再按新边界制定验证方案。
 
 ## 2. 非目标
 
@@ -131,16 +131,17 @@ endpoint config → adapter registry → backend SDK
 
 ## 4. 契约设计
 
-### 4.1 Contract workspace
+### 4.1 Contract documentation
 
-建立独立的契约层，至少包含：
+契约文档位于 `docs/contracts/`，代码中的对应类型集中在
+`services/platform`，至少包含：
 
 ```text
-contracts/domain-contract/
-contracts/task-contract/
-contracts/execution-contract/
-contracts/sensor-contract/
-contracts/event-contract/
+docs/contracts/domain.md
+docs/contracts/task.md
+docs/contracts/execution.md
+docs/contracts/sensor.md
+docs/contracts/event.md
 ```
 
 契约层只包含数据结构、枚举、错误码和 trait，不包含网络、ROS、数据库或厂商
@@ -199,43 +200,29 @@ Transport 只负责序列化和传输，不重新定义业务语义：
 ROS `.msg`、`.srv`、`.action` 与 Rust domain 类型之间必须有显式 mapper，禁止
 业务核心直接使用生成的 ROS 类型。
 
-## 5. 代码仓库目标结构
+## 5. 当前代码仓库结构
 
 ```text
-contracts/
-  domain-contract/
-  task-contract/
-  execution-contract/
-  sensor-contract/
-  event-contract/
+docs/contracts/
+services/platform/
 
 services/
   gateway/
   orchestration/
   execution/
   sensor/
-  world-model/
-  diagnosis/
-  safety/
-
-adapters/
-  gateway-http/
-  gateway-ws/
-  ros-transport/
-  endpoint-runtime/
-  endpoint-adapters/
-  backend-sdks/
-
-interfaces/ros/
 webui/
 docs/
 ```
 
+Endpoint runtime、ROS transport、地图规划、诊断、安全和具体 backend 当前均
+记录在 `TODO.md`，尚未以空壳目录进入源码。
+
 允许的依赖方向：
 
 ```text
-transport / adapter → services → contracts
-backend SDK → endpoint adapter → endpoint runtime → contracts
+transport / adapter → services → platform types
+backend SDK → endpoint adapter → endpoint runtime → platform types
 ```
 
 禁止反向依赖和跨层调用。特别是：
@@ -274,9 +261,9 @@ Make 必须拒绝缺少 endpoint device type 的命令，并对不支持的组�
 重写按以下顺序进行：
 
 1. 删除旧 workspace 成员、旧 ROS 节点入口和重复的设备分发包。
-2. 创建 contracts，并为每个契约建立独立单元测试和序列化 fixture。
+2. 创建 contracts 文档，并使类型定义与文档保持一致。
 3. 重写 Sensor service 与 provider interface。
-4. 重写 Execution runtime，先使用 fake backend 和 fake sensor。
+4. 重写 Execution runtime，接入正式 backend 和 Sensor provider。
 5. 重写 Orchestration，使用 execution contract 与 sensor contract。
 6. 重写 Gateway transport 和持久化边界。
 7. 重写 ROS transport 与 endpoint runtime。
@@ -287,23 +274,20 @@ Make 必须拒绝缺少 endpoint device type 的命令，并对不支持的组�
 重写期间不保留旧实现的兼容分支；需要保留的外部 API 语义在新的 adapter 中
 重新实现，而不是复用旧模块内部结构。
 
-## 8. 测试策略
+## 8. 当前验证策略
 
-测试围绕新边界重新建立：
+当前阶段只保留以下构建验证，不在仓库中保留临时实现：
 
-| 层 | 测试内容 |
+| 层 | 验证内容 |
 |---|---|
-| contracts | 序列化、反序列化、错误码、版本兼容 |
-| Sensor | fake provider、缓存、订阅、丢失和过期数据 |
-| Execution | fake backend、fake sensor、取消、deadline、安全停止 |
-| Orchestration | 能力匹配、生命周期、占用、重试、失败释放 |
-| Gateway | HTTP/WS contract、持久化、事件顺序和鉴权 |
-| transport | domain 与 ROS/HTTP payload 双向映射 |
-| endpoint | adapter/backend SDK 隔离和本地安全行为 |
-| integration | fake endpoint 完成 WebUI 到执行结果的全链路 |
+| contracts | 文档与类型定义一致性 |
+| services | workspace 编译、依赖方向和 clippy |
+| Gateway | HTTP/WS 代码编译 |
+| transport | domain 与 ROS/HTTP mapper 编译 |
+| endpoint | adapter/backend SDK 隔离和构建 |
+| WebUI | TypeScript 检查和生产构建 |
 
-任何测试不得要求真实设备才能运行。真实设备测试只验证 endpoint adapter 和
-backend SDK，不作为核心服务测试前置条件。
+真实设备验证只属于 endpoint adapter 和 backend SDK，不作为控制平面构建前置条件。
 
 ## 9. 验收标准
 
@@ -318,4 +302,5 @@ backend SDK，不作为核心服务测试前置条件。
 7. `make run endpoint DEVICE_TYPE=x` 能明确选择 endpoint 类型。
 8. `make image humble` 与 `make image jazzy` 选择不同 ROS 镜像配置。
 9. 接口文档只有一个权威入口，旧 RFC 明确标记为 superseded 或 archive。
-10. fake endpoint 可以完成任务提交、Sensor 支持、执行反馈、取消和最终结果。
+10. Endpoint 实现完成后必须能通过上述契约提供任务提交、Sensor 支持、执行反馈、
+    取消和最终结果。

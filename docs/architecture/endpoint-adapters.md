@@ -8,6 +8,6 @@ Endpoint adapter 是设备相关代码的唯一入口。它实现 `BackendSdk`�
 1. backend SDK wrapper；
 2. endpoint adapter 注册；
 3. endpoint 配置和部署 profile；
-4. adapter 自己的测试。
+4. adapter 自己的构建与运行验证。
 
 不得修改 Gateway、Orchestration 或 Execution 来加入设备分支。

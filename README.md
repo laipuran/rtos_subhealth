@@ -17,13 +17,12 @@ WebUI → Gateway → Orchestration → Execution → Endpoint Adapter → Backe
 ## 目录
 
 ```text
-contracts/                         纯 Rust 业务契约
+docs/contracts/                    业务契约文档
 services/gateway/                  HTTP/WS 网关
 services/orchestration/            能力匹配与任务生命周期
 services/execution/                设备无关执行运行时
 services/sensor/                   Sensor registry 与 provider 访问
-adapters/endpoint-runtime/         endpoint 组合运行时
-adapters/endpoint-adapters/fake/   fake endpoint
+adapters/                          endpoint adapters（待实现，见 TODO.md）
 webui/                             React/Vite 前端
 docs/architecture/                 权威架构与接口文档
 ```
@@ -31,10 +30,10 @@ docs/architecture/                 权威架构与接口文档
 ## 使用
 
 ```bash
-make test
+make check
 make webui
 make run server
-make run endpoint DEVICE_TYPE=fake
+make run endpoint DEVICE_TYPE=<device-type>
 make image humble
 make image jazzy
 ```

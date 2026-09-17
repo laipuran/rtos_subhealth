@@ -106,7 +106,7 @@ export default function DiagnosisList({ refreshKey, onSelect, liveUpdates }: Pro
             </span>
             <span className="text-gray-400 ml-2">
               {d.source_ids.length > 0
-                ? `· ${d.source_ids.map((s) => s.replace("mock_", "")).join(", ")}`
+                ? `· ${d.source_ids.join(", ")}`
                 : ""}
             </span>
           </div>

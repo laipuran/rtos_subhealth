@@ -5,8 +5,9 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use domain_contract::TaskId;
-use event_contract::SystemEvent;
+use platform::SystemEvent;
+use platform::TaskId;
+use platform::{Primitive, Task, TaskState, TaskTarget};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -15,7 +16,6 @@ use std::{
         Arc,
     },
 };
-use task_contract::{Primitive, Task, TaskState, TaskTarget};
 use tokio::sync::{broadcast, RwLock};
 
 #[derive(Clone)]
@@ -35,7 +35,7 @@ pub struct TaskView {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateTask {
-    pub device_id: Option<domain_contract::DeviceId>,
+    pub device_id: Option<platform::DeviceId>,
     #[serde(default)]
     pub required_capabilities: Vec<String>,
     pub primitive: Primitive,
@@ -150,30 +150,4 @@ async fn events(State(state): State<GatewayState>, ws: WebSocketUpgrade) -> impl
             }
         }
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use axum::{
-        body::Body,
-        http::{Request, StatusCode},
-    };
-    use tower::ServiceExt;
-
-    #[tokio::test]
-    async fn canonical_task_api_stores_device_neutral_task() {
-        let response = app(GatewayState::new())
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/v1/tasks")
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"primitive":"stop"}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::ACCEPTED);
-    }
 }

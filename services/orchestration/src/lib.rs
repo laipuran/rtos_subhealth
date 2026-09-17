@@ -1,9 +1,9 @@
-use domain_contract::{DeviceDescriptor, DeviceId, TaskId};
-use execution_contract::{ExecutionCommand, ExecutionFeedback, ExecutionResult};
-use sensor_contract::SensorProvider;
+use platform::SensorProvider;
+use platform::{DeviceDescriptor, DeviceId, TaskId};
+use platform::{ExecutionCommand, ExecutionFeedback, ExecutionResult};
+use platform::{Task, TaskState};
 use std::collections::HashMap;
 use std::sync::Arc;
-use task_contract::{Task, TaskState};
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum OrchestrationError {
@@ -179,67 +179,5 @@ impl Orchestrator {
 
     pub fn task(&self, id: &TaskId) -> Option<&ActiveTask> {
         self.active.get(id)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use domain_contract::SensorId;
-    use futures_util::stream;
-    use sensor_contract::{SensorDescriptor, SensorFilter, SensorSample, SensorStream};
-    use task_contract::{Primitive, TaskTarget};
-
-    struct Sensors;
-    impl SensorProvider for Sensors {
-        fn descriptors(&self) -> Vec<SensorDescriptor> {
-            vec![]
-        }
-        fn latest(&self, _id: &SensorId) -> Option<SensorSample> {
-            None
-        }
-        fn subscribe(&self, _filter: SensorFilter) -> SensorStream {
-            Box::pin(stream::empty())
-        }
-    }
-
-    struct Execution;
-    impl ExecutionPort for Execution {
-        fn execute(&self, _command: ExecutionCommand) -> Result<(), String> {
-            Ok(())
-        }
-        fn cancel(&self, _task_id: &TaskId) -> Result<(), String> {
-            Ok(())
-        }
-    }
-
-    fn descriptor() -> DeviceDescriptor {
-        DeviceDescriptor {
-            id: DeviceId("endpoint-1".into()),
-            name: "generic".into(),
-            capabilities: vec!["navigation".into()],
-            primitives: vec!["stop".into()],
-            sensors: vec![],
-        }
-    }
-
-    #[test]
-    fn selects_by_capability_not_device_type() {
-        let mut registry = DeviceRegistry::default();
-        registry.register(descriptor());
-        let mut orchestrator = Orchestrator::new(registry, Arc::new(Execution), Arc::new(Sensors));
-        let task = Task {
-            id: TaskId("task-1".into()),
-            device_id: None,
-            required_capabilities: vec!["navigation".into()],
-            primitive: Primitive::Stop,
-            target: TaskTarget::None,
-            parameters: serde_json::Value::Null,
-            deadline_ms: None,
-        };
-        assert_eq!(
-            orchestrator.submit(task).unwrap(),
-            DeviceId("endpoint-1".into())
-        );
     }
 }

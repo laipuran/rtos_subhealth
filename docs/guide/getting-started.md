@@ -5,10 +5,9 @@
 日常 Rust、ROS 和 WebUI 工具通过 Docker profile 提供。控制平面不要求主机
 安装某一种设备 SDK。
 
-## 测试与构建
+## 格式、编译与构建
 
 ```bash
-make test
 make check
 make webui
 ```
@@ -25,7 +24,7 @@ make run server
 ## 运行 endpoint
 
 ```bash
-make run endpoint DEVICE_TYPE=fake
+make run endpoint DEVICE_TYPE=<device-type>
 ```
 
 endpoint 类型必须由已注册 adapter 提供。真实设备的 SDK、ROS 发行版和操作系统

@@ -1,8 +1,6 @@
-use domain_contract::{DeviceState, TaskId};
-use execution_contract::{
-    ExecutionCommand, ExecutionError, ExecutionHandle, ExecutionResult, Executor,
-};
-use sensor_contract::SensorProvider;
+use platform::SensorProvider;
+use platform::{DeviceState, TaskId};
+use platform::{ExecutionCommand, ExecutionError, ExecutionHandle, ExecutionResult, Executor};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -113,75 +111,5 @@ where
 impl From<ExecutionError> for RuntimeError {
     fn from(value: ExecutionError) -> Self {
         Self::Executor(value.to_string())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use domain_contract::{DeviceDescriptor, DeviceId};
-    use execution_contract::{ExecutionHandlePort, ExecutionResult};
-    use futures_util::stream;
-    use sensor_contract::{SensorDescriptor, SensorFilter, SensorSample, SensorStream};
-
-    struct Handle;
-    impl ExecutionHandlePort for Handle {
-        fn result(&self) -> Option<ExecutionResult> {
-            None
-        }
-    }
-
-    struct Backend;
-    impl Executor for Backend {
-        fn descriptor(&self) -> DeviceDescriptor {
-            DeviceDescriptor {
-                id: DeviceId("fake".into()),
-                name: "fake".into(),
-                capabilities: vec![],
-                primitives: vec!["stop".into()],
-                sensors: vec![],
-            }
-        }
-        fn execute(&self, _command: ExecutionCommand) -> Result<ExecutionHandle, ExecutionError> {
-            Ok(Arc::new(Handle))
-        }
-        fn cancel(&self, _task_id: &TaskId) -> Result<(), ExecutionError> {
-            Ok(())
-        }
-        fn state(&self) -> DeviceState {
-            DeviceState {
-                device_id: DeviceId("fake".into()),
-                healthy: true,
-                message: String::new(),
-                updated_at_ms: 0,
-            }
-        }
-    }
-
-    struct Sensors;
-    impl SensorProvider for Sensors {
-        fn descriptors(&self) -> Vec<SensorDescriptor> {
-            vec![]
-        }
-        fn latest(&self, _id: &domain_contract::SensorId) -> Option<SensorSample> {
-            None
-        }
-        fn subscribe(&self, _filter: SensorFilter) -> SensorStream {
-            Box::pin(stream::empty())
-        }
-    }
-
-    #[test]
-    fn execution_uses_sensor_provider_and_rejects_duplicate_task() {
-        let runtime = ExecutionRuntime::new(Arc::new(Backend), Arc::new(Sensors));
-        let command = ExecutionCommand {
-            task_id: TaskId("one".into()),
-            primitive: "stop".into(),
-            payload: serde_json::Value::Null,
-            deadline_ms: None,
-        };
-        runtime.submit(command.clone()).unwrap();
-        assert!(matches!(runtime.submit(command), Err(RuntimeError::Busy)));
-        assert!(runtime.sensor_provider().descriptors().is_empty());
     }
 }

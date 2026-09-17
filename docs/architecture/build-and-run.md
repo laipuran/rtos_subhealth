@@ -5,7 +5,7 @@ make image humble
 make image jazzy
 make webui
 make webui-dev
-make test
+make check
 make check
 ```
 
