@@ -28,8 +28,9 @@
 
 ## P1：Transport
 
+- [x] 建立最小 ROS workspace、RFC subset 接口生成和容器构建入口。
+- [x] 提供 RFC-compatible execution 与 sensor mock，用于开发验证。
 - [ ] 根据 `docs/contracts/` 重新建立 ROS `.msg`、`.srv`、`.action` 接口。
-- [ ] 重新建立 ROS workspace、接口生成和 endpoint transport 构建入口。
 - [ ] 实现 `adapters/ros-transport` 的 domain/ROS 双向 mapper。
 - [ ] 实现 Gateway HTTP/WS 的完整认证、错误格式、事件重连和持久化协议。
 - [ ] 让 WebUI 使用完整 canonical task/event schema，并移除历史 diagnosis

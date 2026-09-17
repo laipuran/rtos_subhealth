@@ -1,8 +1,17 @@
 # Domain Contract
 
-基础标识类型：`TaskId`、`DeviceId`、`SensorId`。
+当前 `services/platform/src/domain.rs` 定义的基础标识类型为：
 
-`DeviceDescriptor` 描述设备事实：标识、名称、能力、支持的 primitive 和可用
-Sensor；`DeviceState` 描述健康状态、状态信息和更新时间。
+- `TaskId(String)`；
+- `DeviceId(String)`；
+- `SensorId(String)`。
+
+- `DeviceDescriptor { id: DeviceId, name: String, capabilities: Vec<String>,
+  primitives: Vec<String>, sensors: Vec<SensorId> }`；
+- `DeviceState { device_id: DeviceId, healthy: bool, message: String,
+  updated_at_ms: u64 }`。
 
 该契约不得包含具体设备名称、厂商 SDK、ROS 类型或设备操作系统信息。
+
+[ROS 2 RFC mocks](../guide/ros-mocks.md) 使用的字段不是这些 canonical 字段的
+直接表示；生产 transport 需要后续实现显式 domain/ROS mapper。

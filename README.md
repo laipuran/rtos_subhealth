@@ -18,6 +18,7 @@ WebUI → Gateway → Orchestration → Execution → Endpoint Adapter → Backe
 
 ```text
 docs/contracts/                    业务契约文档
+ros2_ws/src/                       RFC 接口与开发验证 mock
 services/gateway/                  HTTP/WS 网关
 services/orchestration/            能力匹配与任务生命周期
 services/execution/                设备无关执行运行时
@@ -33,20 +34,27 @@ docs/architecture/                 权威架构与接口文档
 make check
 make webui
 make run server
-make run endpoint DEVICE_TYPE=<device-type>
 make image humble
 make image jazzy
+docker compose -f docker/dev/compose.yaml run --rm dev make build
+docker compose -f docker/dev/compose.yaml run --rm dev \
+  make run endpoint DEVICE_TYPE=mock-exec
+docker compose -f docker/dev/compose.yaml run --rm dev \
+  make run endpoint DEVICE_TYPE=mock-sensor
 ```
 
 `server` 和 `endpoint` 是 `run` 的两种互斥模式。服务端不需要设备类型；运行
-endpoint 时必须指定 `DEVICE_TYPE`。
+endpoint 时必须指定 `DEVICE_TYPE`。当前 `mock-exec` 和 `mock-sensor` 是 RFC
+工作流开发 mock，并非 canonical `platform` ROS mapper。参数可通过
+`ENDPOINT_ARGS` 传给 ROS 节点。
 
 ## 文档
 
 - [架构总览](docs/architecture/overview.md)
 - [分层边界](docs/architecture/layers.md)
 - [接口契约](docs/architecture/contracts.md)
-- [运行时](docs/architecture/runtime.md)
+- [构建与运行](docs/architecture/build-and-run.md)
+- [ROS 2 RFC mock 指南](docs/guide/ros-mocks.md)
 - [Endpoint Adapter](docs/architecture/endpoint-adapters.md)
 - [代码库对比分析](docs/architecture/migration-analysis.md)
 - [完整重写设计](docs/superpowers/specs/2026-09-17-device-agnostic-rewrite-design.md)
