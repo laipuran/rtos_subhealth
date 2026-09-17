@@ -105,7 +105,22 @@ docker compose -f docker/dev/compose.yaml run --rm dev \
   ENDPOINT_ARGS="-p step_delay_s:=0.2"
 ```
 
-Start the sensor mock in one container:
+Start the sensor mock in normal mode in one container:
+
+```bash
+docker compose -f docker/dev/compose.yaml run --rm dev \
+  make run endpoint DEVICE_TYPE=mock-sensor \
+  ENDPOINT_ARGS="-p scenario:=normal -p rate_hz:=5.0 -p random_seed:=0"
+```
+
+With the normal sensor mock running, read one sample:
+
+```bash
+ros2 topic echo --once /physio/mock_spo2 physio_interfaces/msg/PhysioSample
+```
+
+The seeded normal SpO2 sample is approximately `98.57`. Stop that publisher,
+then start anomaly mode for comparison:
 
 ```bash
 docker compose -f docker/dev/compose.yaml run --rm dev \
@@ -120,6 +135,15 @@ install. To use ROS CLI tools, open another sourced container shell:
 docker compose -f docker/dev/compose.yaml run --rm dev bash
 source /opt/ros/$ROS_DISTRO/setup.bash
 source /ws/install/setup.bash
+```
+
+Inspect all three installed interfaces and discover the action with its type:
+
+```bash
+ros2 interface show ros_interfaces/action/ExecTask
+ros2 interface show ros_interfaces/msg/Constraints
+ros2 interface show physio_interfaces/msg/PhysioSample
+ros2 action list -t
 ```
 
 Send a goal and display feedback:
@@ -138,11 +162,14 @@ ros2 action send_goal /mock_exec_task ros_interfaces/action/ExecTask \
   "{type: patrol_route, target_tags: [1, 2, 3, 4, 5]}" --feedback
 ```
 
-With the sensor mock running, read one sample:
+Read the anomaly sample with the same command:
 
 ```bash
 ros2 topic echo --once /physio/mock_spo2 physio_interfaces/msg/PhysioSample
 ```
+
+The seeded anomaly SpO2 sample is approximately `85.57` (and always below
+`90.0`), while both samples have `data_type: spo2` and `valid: true`.
 
 ## Node parameters
 

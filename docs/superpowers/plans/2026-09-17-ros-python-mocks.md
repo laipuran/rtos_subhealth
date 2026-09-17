@@ -604,11 +604,20 @@ Expected: Rust and all four ROS packages build successfully.
 docker compose -f docker/dev/compose.yaml run --rm dev bash -lc '
   source /opt/ros/$ROS_DISTRO/setup.bash
   source /ws/install/setup.bash
-  colcon test \
-    --build-base /ws/build \
+  colcon --log-base /ws/log test \
+    --merge-install \
+    --base-paths ros2_ws/src \
+    --build-base /ws/build/merged-symlink \
     --install-base /ws/install \
     --packages-select mock_exec_layer physio_mock_publisher
-  colcon test-result --test-result-base /ws/build --verbose
+  test_status=$?
+  colcon --log-base /ws/log test-result \
+    --test-result-base /ws/build/merged-symlink \
+    --verbose
+  result_status=$?
+  printf "colcon_test_status=%s\ncolcon_test_result_status=%s\n" \
+    "$test_status" "$result_status"
+  test "$test_status" -eq 0 -a "$result_status" -eq 0
 '
 ```
 

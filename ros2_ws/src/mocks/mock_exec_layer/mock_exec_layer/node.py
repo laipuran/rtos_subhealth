@@ -10,6 +10,7 @@ from rclpy.node import Node
 from ros_interfaces.action import ExecTask
 
 from .logic import (
+    GoalTerminalCoordinator,
     route_for,
     step_feedback,
     terminal_feedback,
@@ -30,6 +31,7 @@ class MockExecLayerNode(Node):
         self._step_delay_s = validate_step_delay(
             float(self.get_parameter('step_delay_s').value)
         )
+        self._terminal_states = GoalTerminalCoordinator()
         self._action_server = ActionServer(
             self,
             ExecTask,
@@ -45,23 +47,27 @@ class MockExecLayerNode(Node):
             return GoalResponse.REJECT
         return GoalResponse.ACCEPT
 
-    def cancel_callback(self, _goal_handle) -> CancelResponse:
-        return CancelResponse.ACCEPT
+    def cancel_callback(self, goal_handle) -> CancelResponse:
+        if self._terminal_states.request_cancel(goal_handle):
+            return CancelResponse.ACCEPT
+        return CancelResponse.REJECT
 
     def execute_callback(self, goal_handle) -> ExecTask.Result:
         request = goal_handle.request
         if request.constraints.max_speed_mps < 0.0:
-            goal_handle.abort()
-            return self._result('failed', 'SIMULATED_FAILURE', 'Negative max speed')
+            return self._abort_or_cancel(
+                goal_handle, [], 'SIMULATED_FAILURE', 'Negative max speed'
+            )
 
         try:
             route = route_for(request.type, request.target_tags)
         except UnsupportedTask:
-            goal_handle.abort()
-            return self._result('failed', 'UNSUPPORTED_TYPE', 'Unsupported task type')
+            return self._abort_or_cancel(
+                goal_handle, [], 'UNSUPPORTED_TYPE', 'Unsupported task type'
+            )
 
         finished_stages = 0
-        if self._cancel_requested(goal_handle):
+        if self._terminal_states.is_cancel_pending(goal_handle):
             return self._cancel(goal_handle, route, finished_stages)
 
         if not route:
@@ -75,21 +81,21 @@ class MockExecLayerNode(Node):
         for index in range(len(route)):
             if self._step_delay_s > 0.0:
                 time.sleep(self._step_delay_s)
-            if self._cancel_requested(goal_handle):
+            if self._terminal_states.is_cancel_pending(goal_handle):
                 return self._cancel(goal_handle, route, finished_stages)
 
             step = step_feedback(route, index)
             self._publish_feedback(goal_handle, 'executing', route, step)
             finished_stages = step.finished_stages
 
-        goal_handle.succeed()
-        return self._result('succeeded', '', 'Task completed')
-
-    @staticmethod
-    def _cancel_requested(goal_handle) -> bool:
-        return goal_handle.is_cancel_requested
+        if self._terminal_states.commit_success(goal_handle):
+            goal_handle.succeed()
+            return self._result('succeeded', '', 'Task completed')
+        return self._cancel(goal_handle, route, finished_stages)
 
     def _cancel(self, goal_handle, route, finished_stages: int) -> ExecTask.Result:
+        if not self._terminal_states.commit_canceled(goal_handle):
+            raise RuntimeError('cancellation was not accepted for this goal')
         self._publish_feedback(
             goal_handle,
             'canceled',
@@ -98,6 +104,14 @@ class MockExecLayerNode(Node):
         )
         goal_handle.canceled()
         return self._result('canceled', '', 'Task canceled')
+
+    def _abort_or_cancel(
+        self, goal_handle, route, error_code: str, message: str
+    ) -> ExecTask.Result:
+        if self._terminal_states.commit_abort(goal_handle):
+            goal_handle.abort()
+            return self._result('failed', error_code, message)
+        return self._cancel(goal_handle, route, 0)
 
     def _publish_feedback(self, goal_handle, state: str, route, step) -> None:
         feedback = ExecTask.Feedback()
