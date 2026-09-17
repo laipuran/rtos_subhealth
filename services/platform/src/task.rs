@@ -32,6 +32,12 @@ pub enum TaskTarget {
     Named { name: String },
 }
 
+impl Default for TaskTarget {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskState {

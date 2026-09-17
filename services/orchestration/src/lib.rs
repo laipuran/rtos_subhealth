@@ -1,61 +1,15 @@
 use platform::SensorProvider;
-use platform::{DeviceDescriptor, DeviceId, TaskId};
+use platform::{DeviceId, TaskId};
 use platform::{ExecutionCommand, ExecutionFeedback, ExecutionResult};
 use platform::{Task, TaskState};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
-pub enum OrchestrationError {
-    #[error("no device satisfies the task requirements")]
-    NoDevice,
-    #[error("device is busy")]
-    Busy,
-    #[error("task already exists")]
-    Duplicate,
-    #[error("task does not exist")]
-    UnknownTask,
-    #[error("execution port error: {0}")]
-    Execution(String),
-}
+use crate::device::DeviceRegistry;
+use crate::error::OrchestrationError;
 
-#[derive(Default)]
-pub struct DeviceRegistry {
-    devices: HashMap<DeviceId, DeviceDescriptor>,
-}
-
-impl DeviceRegistry {
-    pub fn register(&mut self, descriptor: DeviceDescriptor) {
-        self.devices.insert(descriptor.id.clone(), descriptor);
-    }
-
-    pub fn get(&self, id: &DeviceId) -> Option<&DeviceDescriptor> {
-        self.devices.get(id)
-    }
-
-    pub fn select(&self, task: &Task) -> Option<DeviceId> {
-        if let Some(id) = &task.device_id {
-            return self
-                .devices
-                .get(id)
-                .and_then(|device| supports(device, task).then(|| device.id.clone()));
-        }
-        self.devices
-            .values()
-            .find(|device| supports(device, task))
-            .map(|device| device.id.clone())
-    }
-}
-
-fn supports(device: &DeviceDescriptor, task: &Task) -> bool {
-    task.required_capabilities
-        .iter()
-        .all(|required| device.capabilities.contains(required))
-        && device
-            .primitives
-            .iter()
-            .any(|primitive| primitive == task.primitive.as_str())
-}
+mod device;
+mod error;
 
 pub trait ExecutionPort: Send + Sync {
     fn execute(&self, command: ExecutionCommand) -> Result<(), String>;
@@ -179,5 +133,9 @@ impl Orchestrator {
 
     pub fn task(&self, id: &TaskId) -> Option<&ActiveTask> {
         self.active.get(id)
+    }
+
+    pub fn list_tasks(&self) -> Vec<ActiveTask> {
+        self.active.values().cloned().collect()
     }
 }
