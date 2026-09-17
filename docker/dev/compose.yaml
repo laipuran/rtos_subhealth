@@ -25,8 +25,8 @@ services:
     volumes:
       - ../..:/workspace
       - ros2rust_ws:/ws
-      # Cache ONLY the Cargo registry. The toolchain (cargo, rust-analyzer,
-      # cargo-deb) lives in the image, so a fresh/empty volume still works.
+      # Cache ONLY the Cargo registry. The toolchain lives in the image, so a
+      # fresh/empty volume still works.
       - cargo_reg:/usr/local/cargo/registry
     working_dir: /workspace
     stdin_open: true

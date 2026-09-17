@@ -228,7 +228,6 @@ adapters/
 
 interfaces/ros/
 webui/
-deploy/
 docs/
 ```
 
@@ -282,7 +281,7 @@ Make 必须拒绝缺少 endpoint device type 的命令，并对不支持的组�
 6. 重写 Gateway transport 和持久化边界。
 7. 重写 ROS transport 与 endpoint runtime。
 8. 将具体 backend SDK 迁移到 endpoint adapter 目录。
-9. 重写 WebUI API client、Make、Docker 和部署配置。
+9. 重写 WebUI API client、Make 和 Docker 配置。
 10. 将旧文档标记为 superseded，并以本架构文档和接口文档为唯一入口。
 
 重写期间不保留旧实现的兼容分支；需要保留的外部 API 语义在新的 adapter 中

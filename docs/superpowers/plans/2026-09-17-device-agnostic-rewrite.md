@@ -137,7 +137,7 @@
 - Create: `adapters/endpoint-runtime/`
 - Create: `adapters/endpoint-adapters/fake/`
 - Create: `adapters/backend-sdks/README.md`
-- Remove: `services/device-sdk/`, `ros2_ws/src/robot/adapter/`, `deploy/config/adapter-*.env`
+- Remove: `services/device-sdk/`, `ros2_ws/src/robot/adapter/`, and all obsolete endpoint configuration files
 - Modify: endpoint deployment manifests.
 
 **Interfaces:**
@@ -152,13 +152,12 @@
 - [ ] Run endpoint tests and grep core crates for concrete device names.
 - [ ] Commit `feat: add configurable endpoint runtime`.
 
-### Task 7: Rewrite Make, Docker, deployment, and top-level docs
+### Task 7: Rewrite Make, Docker, and top-level docs
 
 **Files:**
 - Modify: `Makefile`, `docker/dev/compose.yaml`, `docker/dev/Dockerfile`
-- Modify: `README.md`, `docs/guide/getting-started.md`, `deploy/README.md`
+- Modify: `README.md`, `docs/guide/getting-started.md`
 - Create: `docker/profiles/ubuntu22-ros-humble/`, `docker/profiles/ubuntu24-ros-jazzy/`
-- Modify: `deploy/systemd/*`, `deploy/run_stack.sh`
 
 **Interfaces:**
 - `make webui`, `make webui-dev`.
@@ -169,7 +168,7 @@
 - [ ] Add shell-level Make tests for accepted commands, missing `DEVICE_TYPE`, unknown image, and mutually exclusive run modes.
 - [ ] Implement `.PHONY` targets and image/profile selection.
 - [ ] Make server mode start only control-plane services; endpoint mode start only configured endpoint runtime.
-- [ ] Update Docker and systemd files to consume endpoint configuration instead of adapter-specific branches.
+- [ ] Update Docker profiles to consume endpoint configuration instead of adapter-specific branches.
 - [ ] Run all Make smoke tests, `make help`, and documentation link checks.
 - [ ] Commit `build: replace runtime entry points with layered modes`.
 
