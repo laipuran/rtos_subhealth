@@ -34,19 +34,19 @@ docs/architecture/                 权威架构与接口文档
 make check
 make webui
 make run server
-make image humble
-make image jazzy
-docker compose -f docker/dev/compose.yaml run --rm dev make build
-docker compose -f docker/dev/compose.yaml run --rm dev \
-  make run endpoint DEVICE_TYPE=mock-exec
-docker compose -f docker/dev/compose.yaml run --rm dev \
-  make run endpoint DEVICE_TYPE=mock-sensor
+make humble  # 构建 Humble 镜像并进入容器；或使用 make jazzy
+
+# 以下命令在容器内执行
+make build
+make run endpoint DEVICE_TYPE=mock-exec
+make run endpoint DEVICE_TYPE=mock-sensor
 ```
 
 `server` 和 `endpoint` 是 `run` 的两种互斥模式。服务端不需要设备类型；运行
 endpoint 时必须指定 `DEVICE_TYPE`。当前 `mock-exec` 和 `mock-sensor` 是 RFC
 工作流开发 mock，并非 canonical `platform` ROS mapper。参数可通过
-`ENDPOINT_ARGS` 传给 ROS 节点。
+`ENDPOINT_ARGS` 传给 ROS 节点。`make humble` 和 `make jazzy` 都会在镜像构建
+完成后直接进入对应的交互容器。
 
 ## 文档
 

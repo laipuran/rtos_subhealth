@@ -18,15 +18,15 @@ ENDPOINT_ARGS ?=
 
 .DEFAULT_GOAL := help
 
-.PHONY: help image humble jazzy build fmt lint check webui webui-dev \
+.PHONY: help humble jazzy build fmt lint check webui webui-dev \
         run server endpoint clean
 
 ## help: list available targets
 help:
 	@echo "ROS Subhealth targets:"
 	@echo
-	@echo "  make image humble    Build the Ubuntu 22.04 + ROS Humble image"
-	@echo "  make image jazzy     Build the Ubuntu 24.04 + ROS Jazzy image"
+	@echo "  make humble          Build the Ubuntu 22.04 + ROS Humble image and enter it"
+	@echo "  make jazzy           Build the Ubuntu 24.04 + ROS Jazzy image and enter it"
 	@echo "  make build           Build Rust, plus ROS packages in the container"
 	@echo "  make fmt             Format the Rust workspace"
 	@echo "  make lint            Check formatting and run clippy"
@@ -39,16 +39,15 @@ help:
 	@echo
 	@echo "  endpoint requires DEVICE_TYPE; server and endpoint are mutually exclusive"
 
-## image: build the selected ROS image profile
-image:
-	@case " $(MAKECMDGOALS) " in \
-	  *" humble "*) $(COMPOSE) build --build-arg ROS_DISTRO=humble --build-arg UBUNTU_VERSION=22.04 ;; \
-	  *" jazzy "*) $(COMPOSE) build --build-arg ROS_DISTRO=jazzy --build-arg UBUNTU_VERSION=24.04 ;; \
-	  *) echo "usage: make image humble|jazzy" >&2; exit 2 ;; \
-	esac
+## humble: build the Humble image and enter an interactive development container
+humble:
+	ROS_DISTRO=humble UBUNTU_VERSION=22.04 $(COMPOSE) build --build-arg ROS_DISTRO=humble --build-arg UBUNTU_VERSION=22.04
+	ROS_DISTRO=humble UBUNTU_VERSION=22.04 $(COMPOSE) run --rm dev bash
 
-humble jazzy:
-	@:
+## jazzy: build the Jazzy image and enter an interactive development container
+jazzy:
+	ROS_DISTRO=jazzy UBUNTU_VERSION=24.04 $(COMPOSE) build --build-arg ROS_DISTRO=jazzy --build-arg UBUNTU_VERSION=24.04
+	ROS_DISTRO=jazzy UBUNTU_VERSION=24.04 $(COMPOSE) run --rm dev bash
 
 ## build: Rust workspace build, plus ROS packages in the container
 build:

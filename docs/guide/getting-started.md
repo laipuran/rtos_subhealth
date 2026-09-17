@@ -33,8 +33,8 @@ endpoint 类型必须由已注册 adapter 提供。真实设备的 SDK、ROS 发
 ## 选择镜像
 
 ```bash
-make image humble  # Ubuntu 22.04 + ROS Humble
-make image jazzy   # Ubuntu 24.04 + ROS Jazzy
+make humble  # 构建 Ubuntu 22.04 + ROS Humble 镜像并进入容器
+make jazzy   # 构建 Ubuntu 24.04 + ROS Jazzy 镜像并进入容器
 ```
 
 ## 文档入口

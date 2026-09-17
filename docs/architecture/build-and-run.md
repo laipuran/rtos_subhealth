@@ -1,8 +1,8 @@
 # 构建与运行
 
 ```bash
-make image humble
-make image jazzy
+make humble
+make jazzy
 make webui
 make webui-dev
 make check
@@ -12,12 +12,13 @@ make check
 使用 Ubuntu 24.04。endpoint 类型和 backend SDK 由 endpoint 配置决定，而不是
 编译控制平面。
 
-ROS package 必须在镜像内构建。例如先在宿主机选择 Jazzy 镜像，再运行容器内
-构建：
+ROS package 必须在镜像内构建。`make jazzy`（或 `make humble`）会先构建对应
+镜像，然后直接进入交互容器：
 
 ```bash
-make image jazzy
-docker compose -f docker/dev/compose.yaml run --rm dev make build
+make jazzy
+# 进入容器后
+make build
 ```
 
 容器内 `make build` 同时构建 Rust workspace 和 `ros2_ws/src`，并使用
@@ -31,11 +32,9 @@ build intermediate 和 merged install 分别位于 `/ws/log`、
 
 ```bash
 make run server
-docker compose -f docker/dev/compose.yaml run --rm dev \
-  make run endpoint DEVICE_TYPE=mock-exec \
+make run endpoint DEVICE_TYPE=mock-exec \
   ENDPOINT_ARGS="-p step_delay_s:=0.2"
-docker compose -f docker/dev/compose.yaml run --rm dev \
-  make run endpoint DEVICE_TYPE=mock-sensor \
+make run endpoint DEVICE_TYPE=mock-sensor \
   ENDPOINT_ARGS="-p scenario:=anomaly -p rate_hz:=5.0 -p random_seed:=0"
 ```
 

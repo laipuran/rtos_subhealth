@@ -244,8 +244,8 @@ make webui-dev
 make run server
 make run endpoint DEVICE_TYPE=<device-type>
 
-make image humble
-make image jazzy
+make humble
+make jazzy
 ```
 
 `server` 和 `endpoint` 是 `run` 的两种互斥模式。
@@ -300,7 +300,7 @@ Make 必须拒绝缺少 endpoint device type 的命令，并对不支持的组�
 5. 新增 endpoint 只需新增 adapter、backend SDK 组合和配置。
 6. `make run server` 不需要任何设备类型。
 7. `make run endpoint DEVICE_TYPE=x` 能明确选择 endpoint 类型。
-8. `make image humble` 与 `make image jazzy` 选择不同 ROS 镜像配置。
+8. `make humble` 与 `make jazzy` 构建不同 ROS 镜像配置并进入对应容器。
 9. 接口文档只有一个权威入口，旧 RFC 明确标记为 superseded 或 archive。
 10. Endpoint 实现完成后必须能通过上述契约提供任务提交、Sensor 支持、执行反馈、
     取消和最终结果。

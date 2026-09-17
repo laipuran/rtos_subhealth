@@ -179,11 +179,12 @@ published sample contains a current ROS timestamp and `valid=true`.
 
 ## 7. Build and Run Flow
 
-The image remains the only image-related target:
+The ROS distribution targets build the selected image and enter its interactive
+development container:
 
 ```bash
-make image humble
-make image jazzy
+make humble
+make jazzy
 ```
 
 Inside the image, `make build` performs:

@@ -84,32 +84,31 @@ and `valid=true`.
 
 ## Build and run
 
-Build the selected image on the host, then run the build in the container:
+Build the selected image on the host and enter its interactive container:
 
 ```bash
-make image jazzy
-docker compose -f docker/dev/compose.yaml run --rm dev make build
+make jazzy
+# inside the container
+make build
 ```
 
 The container build runs `colcon build --merge-install --symlink-install`.
 With the default `ROS_BUILD_ROOT=/ws`, logs, intermediate files, and the merged
 install are written to `/ws/log`, `/ws/build/merged-symlink`, and `/ws/install`;
-they are not written below `ros2_ws/`. `make image humble` selects the Humble
-image instead.
+they are not written below `ros2_ws/`. `make humble` builds and enters the
+Humble image instead.
 
-Start the execution mock in one container:
+Start the execution mock inside the container:
 
 ```bash
-docker compose -f docker/dev/compose.yaml run --rm dev \
-  make run endpoint DEVICE_TYPE=mock-exec \
+make run endpoint DEVICE_TYPE=mock-exec \
   ENDPOINT_ARGS="-p step_delay_s:=0.2"
 ```
 
 Start the sensor mock in normal mode in one container:
 
 ```bash
-docker compose -f docker/dev/compose.yaml run --rm dev \
-  make run endpoint DEVICE_TYPE=mock-sensor \
+make run endpoint DEVICE_TYPE=mock-sensor \
   ENDPOINT_ARGS="-p scenario:=normal -p rate_hz:=5.0 -p random_seed:=0"
 ```
 
@@ -123,8 +122,7 @@ The seeded normal SpO2 sample is approximately `98.57`. Stop that publisher,
 then start anomaly mode for comparison:
 
 ```bash
-docker compose -f docker/dev/compose.yaml run --rm dev \
-  make run endpoint DEVICE_TYPE=mock-sensor \
+make run endpoint DEVICE_TYPE=mock-sensor \
   ENDPOINT_ARGS="-p scenario:=anomaly -p rate_hz:=5.0 -p random_seed:=0"
 ```
 
