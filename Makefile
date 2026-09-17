@@ -13,6 +13,8 @@ IN_CONTAINER := $(if $(wildcard /.dockerenv),1,0)
 
 # Overridable settings.
 GATEWAY_HTTP_PORT ?= 5000
+ROS_BUILD_ROOT ?= $(if $(ROS_RUST_WS),$(ROS_RUST_WS),/ws)
+ENDPOINT_ARGS ?=
 
 .DEFAULT_GOAL := help
 
@@ -25,7 +27,7 @@ help:
 	@echo
 	@echo "  make image humble    Build the Ubuntu 22.04 + ROS Humble image"
 	@echo "  make image jazzy     Build the Ubuntu 24.04 + ROS Jazzy image"
-	@echo "  make build           Build the pure-Rust workspace"
+	@echo "  make build           Build Rust, plus ROS packages in the container"
 	@echo "  make fmt             Format the Rust workspace"
 	@echo "  make lint            Check formatting and run clippy"
 	@echo "  make check           format + lint + build"
@@ -48,9 +50,12 @@ image:
 humble jazzy:
 	@:
 
-## build: pure-Rust workspace build
+## build: Rust workspace build, plus ROS packages in the container
 build:
 	cargo build --workspace
+ifeq ($(IN_CONTAINER),1)
+	source /opt/ros/$(ROS_DISTRO)/setup.bash && colcon --log-base $(ROS_BUILD_ROOT)/log build --merge-install --base-paths ros2_ws/src --build-base $(ROS_BUILD_ROOT)/build/merged-symlink --install-base $(ROS_BUILD_ROOT)/install --symlink-install
+endif
 
 ## fmt: format the Rust workspace
 fmt:
@@ -84,7 +89,17 @@ endif
 run:
 	@case " $(MAKECMDGOALS) " in \
 	  *" server "*) GATEWAY_HTTP_PORT=$(GATEWAY_HTTP_PORT) cargo run -p gateway ;; \
-	  *" endpoint "*) test -n "$(DEVICE_TYPE)" || { echo "usage: make run endpoint DEVICE_TYPE=<device-type>" >&2; exit 2; }; echo "endpoint runtime is not implemented for DEVICE_TYPE=$(DEVICE_TYPE); see TODO.md" >&2; exit 3 ;; \
+	  *" endpoint "*) \
+	    case "$(DEVICE_TYPE)" in \
+	      mock-exec) ros_package=mock_exec_layer; ros_executable=mock_exec_layer_node ;; \
+	      mock-sensor) ros_package=physio_mock_publisher; ros_executable=physio_mock_publisher_node ;; \
+	      "") echo "usage: make run endpoint DEVICE_TYPE=<device-type>" >&2; echo "supported DEVICE_TYPE values: mock-exec, mock-sensor" >&2; exit 2 ;; \
+	      *) echo "unsupported DEVICE_TYPE=$(DEVICE_TYPE); supported DEVICE_TYPE values: mock-exec, mock-sensor" >&2; exit 2 ;; \
+	    esac; \
+	    test -f "$(ROS_BUILD_ROOT)/install/setup.bash" || { echo "ROS install setup not found at $(ROS_BUILD_ROOT)/install/setup.bash; run 'make build' inside the ROS container first" >&2; exit 2; }; \
+	    source /opt/ros/$(ROS_DISTRO)/setup.bash && \
+	    source "$(ROS_BUILD_ROOT)/install/setup.bash" && \
+	    ros2 run "$$ros_package" "$$ros_executable" $(if $(strip $(ENDPOINT_ARGS)),--ros-args $(ENDPOINT_ARGS),) ;; \
 	  *) echo "usage: make run server | make run endpoint DEVICE_TYPE=<device-type>" >&2; exit 2 ;; \
 	esac
 

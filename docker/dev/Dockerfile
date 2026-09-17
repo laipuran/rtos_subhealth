@@ -13,7 +13,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential cmake git curl pkg-config libclang-dev sudo \
-      python3-pip python3-vcstool \
+      python3-pip python3-pytest python3-vcstool \
       ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
       ros-${ROS_DISTRO}-cv-bridge \
       ros-${ROS_DISTRO}-sensor-msgs \
