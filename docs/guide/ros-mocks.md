@@ -50,7 +50,10 @@ For every route step, feedback has `state=executing`, progress `(index + 1) /
 route length`, the current and next tags, a one-based `finished_stages`, the
 whole route, and a current timestamp. Thus progress stays in `[0.0, 1.0]` and
 the final step uses `next_tag=-1`. `error_code` and `message` remain empty in
-normal feedback. `hold` has an empty route and therefore emits no feedback.
+normal feedback. `hold` emits one immediate `state=completed` feedback with
+`progress=1.0`, `current_tag=-1`, and `next_tag=-1`. Accepted cancellation
+emits terminal `state=canceled` feedback with `next_tag=-1` before returning
+the canceled result; its progress and current tag reflect completed stages.
 
 ### RFC 004: `Constraints`
 
@@ -148,7 +151,7 @@ ros2 topic echo --once /physio/mock_spo2 physio_interfaces/msg/PhysioSample
 | Parameter | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `action_name` | string | `mock_exec_task` | Action server name. |
-| `step_delay_s` | number | `1.0` | Sleep before each route-step feedback when greater than zero. |
+| `step_delay_s` | number | `1.0` | Non-negative sleep before each route-step feedback; a negative value fails node initialization. |
 
 ### `physio_mock_publisher`
 

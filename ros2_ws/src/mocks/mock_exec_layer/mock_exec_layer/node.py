@@ -9,7 +9,13 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from ros_interfaces.action import ExecTask
 
-from .logic import route_for, step_feedback, UnsupportedTask
+from .logic import (
+    route_for,
+    step_feedback,
+    terminal_feedback,
+    UnsupportedTask,
+    validate_step_delay,
+)
 
 
 class MockExecLayerNode(Node):
@@ -21,6 +27,9 @@ class MockExecLayerNode(Node):
         self.declare_parameter('step_delay_s', 1.0)
 
         action_name = self.get_parameter('action_name').value
+        self._step_delay_s = validate_step_delay(
+            float(self.get_parameter('step_delay_s').value)
+        )
         self._action_server = ActionServer(
             self,
             ExecTask,
@@ -51,26 +60,27 @@ class MockExecLayerNode(Node):
             goal_handle.abort()
             return self._result('failed', 'UNSUPPORTED_TYPE', 'Unsupported task type')
 
+        finished_stages = 0
         if self._cancel_requested(goal_handle):
-            return self._cancel(goal_handle)
+            return self._cancel(goal_handle, route, finished_stages)
 
-        step_delay_s = self.get_parameter('step_delay_s').value
+        if not route:
+            self._publish_feedback(
+                goal_handle,
+                'completed',
+                route,
+                terminal_feedback(route, finished_stages),
+            )
+
         for index in range(len(route)):
-            if step_delay_s > 0.0:
-                time.sleep(step_delay_s)
+            if self._step_delay_s > 0.0:
+                time.sleep(self._step_delay_s)
             if self._cancel_requested(goal_handle):
-                return self._cancel(goal_handle)
+                return self._cancel(goal_handle, route, finished_stages)
 
             step = step_feedback(route, index)
-            feedback = ExecTask.Feedback()
-            feedback.state = 'executing'
-            feedback.progress = step.progress
-            feedback.current_tag = step.current_tag
-            feedback.next_tag = step.next_tag
-            feedback.finished_stages = step.finished_stages
-            feedback.route = route
-            feedback.timestamp = self.get_clock().now().to_msg()
-            goal_handle.publish_feedback(feedback)
+            self._publish_feedback(goal_handle, 'executing', route, step)
+            finished_stages = step.finished_stages
 
         goal_handle.succeed()
         return self._result('succeeded', '', 'Task completed')
@@ -79,9 +89,26 @@ class MockExecLayerNode(Node):
     def _cancel_requested(goal_handle) -> bool:
         return goal_handle.is_cancel_requested
 
-    def _cancel(self, goal_handle) -> ExecTask.Result:
+    def _cancel(self, goal_handle, route, finished_stages: int) -> ExecTask.Result:
+        self._publish_feedback(
+            goal_handle,
+            'canceled',
+            route,
+            terminal_feedback(route, finished_stages),
+        )
         goal_handle.canceled()
         return self._result('canceled', '', 'Task canceled')
+
+    def _publish_feedback(self, goal_handle, state: str, route, step) -> None:
+        feedback = ExecTask.Feedback()
+        feedback.state = state
+        feedback.progress = step.progress
+        feedback.current_tag = step.current_tag
+        feedback.next_tag = step.next_tag
+        feedback.finished_stages = step.finished_stages
+        feedback.route = route
+        feedback.timestamp = self.get_clock().now().to_msg()
+        goal_handle.publish_feedback(feedback)
 
     def _result(self, final_state: str, error_code: str, message: str) -> ExecTask.Result:
         result = ExecTask.Result()

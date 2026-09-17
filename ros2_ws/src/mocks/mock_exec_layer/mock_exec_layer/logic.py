@@ -39,3 +39,20 @@ def step_feedback(route: Sequence[int], index: int) -> StepFeedback:
         next_tag=route[index + 1] if index + 1 < len(route) else -1,
         finished_stages=index + 1,
     )
+
+
+def terminal_feedback(route: Sequence[int], finished_stages: int) -> StepFeedback:
+    if finished_stages < 0 or finished_stages > len(route):
+        raise ValueError(finished_stages)
+    return StepFeedback(
+        progress=finished_stages / len(route) if route else 1.0,
+        current_tag=route[finished_stages - 1] if finished_stages else -1,
+        next_tag=-1,
+        finished_stages=finished_stages,
+    )
+
+
+def validate_step_delay(value: float) -> float:
+    if value < 0.0:
+        raise ValueError(f'step_delay_s must be non-negative, got {value}')
+    return value
