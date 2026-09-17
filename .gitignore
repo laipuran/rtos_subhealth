@@ -150,6 +150,10 @@ vite.config.ts.timestamp-*
 /install/
 /log/
 
+# Python bytecode caches
+__pycache__/
+*.py[cod]
+
 # Database files
 *.db
 
