@@ -39,10 +39,6 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
                  --component rustfmt --component clippy --component rust-analyzer \
  && chmod -R a+w /usr/local/cargo /usr/local/rustup
 
-# cargo-deb for packaging the Rust services (`make deb`). Pinned to the newest
-# release that still builds with the 1.85 toolchain.
-RUN cargo install cargo-deb --version 2.8.0 --locked
-
 # WebUI toolchain. Keep the Node major on the current LTS line and pin pnpm so
 # frozen-lockfile installs behave the same across developer machines.
 RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
