@@ -238,10 +238,14 @@ dedicated OS thread
 └── rclrs executor + node + ActionClients
 ```
 
-The package uses `ExecutorCommands::run/query` to schedule action futures on
-the spinning executor. Those futures map ROS events and forward typed values to
-bounded Tokio channels. The executor thread never blocks waiting for a Tokio
-receiver.
+The dedicated thread only calls blocking `executor.spin(...)`. `rclrs`
+ActionClient objects are reference-counted and their goal/feedback/result
+handles are async futures and streams, so `RosTaskClient::execute` awaits them
+from the caller's Tokio runtime while the ROS thread services the underlying
+wait set. After acceptance, a Tokio relay task consumes the private `rclrs`
+goal stream, maps its events, and forwards typed values to bounded channels.
+No blocking ROS spin runs on a Tokio worker, and the ROS thread never blocks
+waiting for a Tokio receiver.
 
 Each accepted goal owns:
 
@@ -363,6 +367,7 @@ Create:
 ```text
 ros2_ws/src/control_plane/ros_task_client/package.xml
 ros2_ws/src/control_plane/ros_task_client/Cargo.toml
+ros2_ws/src/control_plane/ros_task_client/Cargo.lock
 ros2_ws/src/control_plane/ros_task_client/src/lib.rs
 ros2_ws/src/control_plane/ros_task_client/src/client.rs
 ros2_ws/src/control_plane/ros_task_client/src/config.rs
