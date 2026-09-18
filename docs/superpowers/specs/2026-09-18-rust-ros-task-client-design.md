@@ -77,7 +77,7 @@ ros2_ws/src/control_plane/ros_task_client/
 │   └── types.rs
 ├── tests/
 │   ├── config.rs
-│   ├── mapper.rs
+│   ├── lifecycle.rs
 │   └── mock_exec.rs
 └── test/
     └── run_mock_exec_integration.sh
@@ -92,6 +92,10 @@ Responsibilities:
 - `client.rs`: async submit/cancel API and Action event routing;
 - `runtime.rs`: context/node/executor construction, executor thread, shutdown;
 - `error.rs`: stable connection-layer error categories.
+
+Private mapper tests live in `mapper.rs` under `#[cfg(test)]` so the generated
+ROS conversion functions do not need to become public merely for integration
+tests. Files under `tests/` exercise only the exported package boundary.
 
 Generated ROS types and raw `rclrs` goal objects are private implementation
 details. No public function accepts or returns them.
@@ -376,7 +380,7 @@ ros2_ws/src/control_plane/ros_task_client/src/mapper.rs
 ros2_ws/src/control_plane/ros_task_client/src/runtime.rs
 ros2_ws/src/control_plane/ros_task_client/src/types.rs
 ros2_ws/src/control_plane/ros_task_client/tests/config.rs
-ros2_ws/src/control_plane/ros_task_client/tests/mapper.rs
+ros2_ws/src/control_plane/ros_task_client/tests/lifecycle.rs
 ros2_ws/src/control_plane/ros_task_client/tests/mock_exec.rs
 ros2_ws/src/control_plane/ros_task_client/test/run_mock_exec_integration.sh
 ```
