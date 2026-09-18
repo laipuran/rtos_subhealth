@@ -27,6 +27,20 @@ The active interfaces are:
 Planning, diagnosis, and AprilTag perception interfaces are deliberately
 excluded. The execution mock does not provide AprilTag detection.
 
+The execution package follows the same responsibility-oriented module pattern
+as the Rust crates without mirroring Rust filenames:
+
+```text
+mock_exec_layer/
+├── node.py             # ROS node, ActionServer, message mapping, lifecycle
+├── contract.py         # primitive payload parsing and validation
+├── execution.py        # deterministic execution and feedback model
+└── terminal_state.py   # thread-safe action terminal-state coordination
+```
+
+Only `node.py` depends on ROS. The other modules contain independently tested
+Python logic.
+
 ## Interface fields
 
 ### `ExecuteTask`

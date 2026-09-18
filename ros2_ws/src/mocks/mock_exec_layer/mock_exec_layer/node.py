@@ -10,15 +10,17 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from task_interfaces.action import ExecuteTask
 
-from .logic import (
-    canceled_feedback,
-    execution_steps,
-    GoalTerminalCoordinator,
+from .contract import (
     InvalidPayload,
     parse_payload,
     UnsupportedPrimitive,
+)
+from .execution import (
+    canceled_feedback,
+    execution_steps,
     validate_step_delay,
 )
+from .terminal_state import GoalTerminalCoordinator
 
 
 class MockExecLayerNode(Node):
