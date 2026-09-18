@@ -1,5 +1,6 @@
 """ROS 2 action server for deterministic task execution."""
 
+import json
 import time
 
 import rclpy
@@ -7,14 +8,15 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from ros_interfaces.action import ExecTask
+from task_interfaces.action import ExecuteTask
 
 from .logic import (
+    canceled_feedback,
+    execution_steps,
     GoalTerminalCoordinator,
-    route_for,
-    step_feedback,
-    terminal_feedback,
-    UnsupportedTask,
+    InvalidPayload,
+    parse_payload,
+    UnsupportedPrimitive,
     validate_step_delay,
 )
 
@@ -24,17 +26,21 @@ class MockExecLayerNode(Node):
 
     def __init__(self) -> None:
         super().__init__('mock_exec_layer')
-        self.declare_parameter('action_name', 'mock_exec_task')
+        self.declare_parameter('action_name', '/mock_exec/execute_task')
+        self.declare_parameter('device_id', 'mock_exec')
         self.declare_parameter('step_delay_s', 1.0)
+        self.declare_parameter('fail_target_tag', 2**31)
 
         action_name = self.get_parameter('action_name').value
+        self._device_id = str(self.get_parameter('device_id').value)
         self._step_delay_s = validate_step_delay(
             float(self.get_parameter('step_delay_s').value)
         )
+        self._fail_target_tag = int(self.get_parameter('fail_target_tag').value)
         self._terminal_states = GoalTerminalCoordinator()
         self._action_server = ActionServer(
             self,
-            ExecTask,
+            ExecuteTask,
             action_name,
             execute_callback=self.execute_callback,
             goal_callback=self.goal_callback,
@@ -42,8 +48,14 @@ class MockExecLayerNode(Node):
             callback_group=ReentrantCallbackGroup(),
         )
 
-    def goal_callback(self, goal_request: ExecTask.Goal) -> GoalResponse:
-        if not goal_request.type:
+    def goal_callback(self, goal_request: ExecuteTask.Goal) -> GoalResponse:
+        if not goal_request.task_id or goal_request.device_id != self._device_id:
+            return GoalResponse.REJECT
+        if goal_request.deadline_unix_ms < 0:
+            return GoalResponse.REJECT
+        try:
+            parse_payload(goal_request.primitive, goal_request.payload_json)
+        except (InvalidPayload, UnsupportedPrimitive):
             return GoalResponse.REJECT
         return GoalResponse.ACCEPT
 
@@ -52,85 +64,96 @@ class MockExecLayerNode(Node):
             return CancelResponse.ACCEPT
         return CancelResponse.REJECT
 
-    def execute_callback(self, goal_handle) -> ExecTask.Result:
+    def execute_callback(self, goal_handle) -> ExecuteTask.Result:
         request = goal_handle.request
-        if request.constraints.max_speed_mps < 0.0:
-            return self._abort_or_cancel(
-                goal_handle, [], 'SIMULATED_FAILURE', 'Negative max speed'
-            )
-
         try:
-            route = route_for(request.type, request.target_tags)
-        except UnsupportedTask:
+            payload = parse_payload(request.primitive, request.payload_json)
+            steps = execution_steps(request.primitive, payload)
+        except InvalidPayload as error:
             return self._abort_or_cancel(
-                goal_handle, [], 'UNSUPPORTED_TYPE', 'Unsupported task type'
+                goal_handle, None, 'INVALID_PAYLOAD', str(error)
+            )
+        except UnsupportedPrimitive as error:
+            return self._abort_or_cancel(
+                goal_handle, None, 'UNSUPPORTED_PRIMITIVE', str(error)
             )
 
-        finished_stages = 0
-        if self._terminal_states.is_cancel_pending(goal_handle):
-            return self._cancel(goal_handle, route, finished_stages)
-
-        if not route:
-            self._publish_feedback(
-                goal_handle,
-                'completed',
-                route,
-                terminal_feedback(route, finished_stages),
-            )
-
-        for index in range(len(route)):
+        last_step = None
+        for step in steps:
             if self._step_delay_s > 0.0:
                 time.sleep(self._step_delay_s)
             if self._terminal_states.is_cancel_pending(goal_handle):
-                return self._cancel(goal_handle, route, finished_stages)
+                return self._cancel(goal_handle, last_step)
+            if self._deadline_expired(request.deadline_unix_ms):
+                return self._abort_or_cancel(
+                    goal_handle,
+                    last_step,
+                    'DEADLINE_EXCEEDED',
+                    'Task deadline elapsed',
+                )
 
-            step = step_feedback(route, index)
-            self._publish_feedback(goal_handle, 'executing', route, step)
-            finished_stages = step.finished_stages
+            self._publish_feedback(goal_handle, 'running', step)
+            last_step = step
+
+            if (
+                request.primitive == 'go_to_tag'
+                and payload['target_tag'] == self._fail_target_tag
+            ):
+                return self._abort_or_cancel(
+                    goal_handle, last_step, 'SDK_ERROR', 'Configured mock failure'
+                )
 
         if self._terminal_states.commit_success(goal_handle):
             goal_handle.succeed()
-            return self._result('succeeded', '', 'Task completed')
-        return self._cancel(goal_handle, route, finished_stages)
+            return self._result(goal_handle, 'succeeded', '', 'Task completed')
+        return self._cancel(goal_handle, last_step)
 
-    def _cancel(self, goal_handle, route, finished_stages: int) -> ExecTask.Result:
+    def _cancel(self, goal_handle, last_step) -> ExecuteTask.Result:
+        while not goal_handle.is_cancel_requested:
+            time.sleep(0.001)
         if not self._terminal_states.commit_canceled(goal_handle):
             raise RuntimeError('cancellation was not accepted for this goal')
         self._publish_feedback(
-            goal_handle,
-            'canceled',
-            route,
-            terminal_feedback(route, finished_stages),
+            goal_handle, 'canceled', canceled_feedback(last_step)
         )
         goal_handle.canceled()
-        return self._result('canceled', '', 'Task canceled')
+        return self._result(goal_handle, 'canceled', '', 'Task canceled')
 
     def _abort_or_cancel(
-        self, goal_handle, route, error_code: str, message: str
-    ) -> ExecTask.Result:
+        self, goal_handle, last_step, error_code: str, message: str
+    ) -> ExecuteTask.Result:
         if self._terminal_states.commit_abort(goal_handle):
             goal_handle.abort()
-            return self._result('failed', error_code, message)
-        return self._cancel(goal_handle, route, 0)
+            return self._result(goal_handle, 'failed', error_code, message)
+        return self._cancel(goal_handle, last_step)
 
-    def _publish_feedback(self, goal_handle, state: str, route, step) -> None:
-        feedback = ExecTask.Feedback()
+    def _publish_feedback(self, goal_handle, state: str, step) -> None:
+        feedback = ExecuteTask.Feedback()
+        feedback.task_id = goal_handle.request.task_id
         feedback.state = state
-        feedback.progress = step.progress
-        feedback.current_tag = step.current_tag
-        feedback.next_tag = step.next_tag
-        feedback.finished_stages = step.finished_stages
-        feedback.route = route
+        feedback.progress = max(0.0, min(1.0, step.progress))
+        feedback.phase = step.phase
+        feedback.details_json = json.dumps(
+            step.details, separators=(',', ':'), sort_keys=True
+        )
         feedback.timestamp = self.get_clock().now().to_msg()
         goal_handle.publish_feedback(feedback)
 
-    def _result(self, final_state: str, error_code: str, message: str) -> ExecTask.Result:
-        result = ExecTask.Result()
+    def _result(
+        self, goal_handle, final_state: str, error_code: str, message: str
+    ) -> ExecuteTask.Result:
+        result = ExecuteTask.Result()
+        result.task_id = goal_handle.request.task_id
         result.final_state = final_state
         result.error_code = error_code
         result.message = message
         result.finished_time = self.get_clock().now().to_msg()
         return result
+
+    def _deadline_expired(self, deadline_unix_ms: int) -> bool:
+        if deadline_unix_ms == 0:
+            return False
+        return time.time_ns() // 1_000_000 >= deadline_unix_ms
 
     def destroy_node(self) -> None:
         self._action_server.destroy()

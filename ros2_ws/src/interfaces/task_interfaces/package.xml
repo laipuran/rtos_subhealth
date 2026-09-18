@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>ros_interfaces</name>
+  <name>task_interfaces</name>
   <version>0.1.0</version>
-  <description>Minimal RFC-compatible execution interfaces for ROS workflow mocks.</description>
+  <description>Unified task execution interfaces.</description>
   <maintainer email="puranlai@qq.com">Duck Ran</maintainer>
   <license>Apache-2.0</license>
 

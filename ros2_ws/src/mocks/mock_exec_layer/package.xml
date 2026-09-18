@@ -10,7 +10,7 @@
 
   <depend>builtin_interfaces</depend>
   <depend>rclpy</depend>
-  <depend>ros_interfaces</depend>
+  <depend>task_interfaces</depend>
 
   <test_depend>python3-pytest</test_depend>
 

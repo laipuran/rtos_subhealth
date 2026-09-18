@@ -2,16 +2,17 @@
 
 from dataclasses import dataclass
 from enum import Enum, auto
+import json
 import threading
-from typing import Sequence
 import weakref
 
-FALLBACK_GOAL_TAG = 42
-FALLBACK_PATROL_ROUTE = (10, 20, 30)
+
+class UnsupportedPrimitive(ValueError):
+    """Raised when a primitive is not supported by the mock."""
 
 
-class UnsupportedTask(ValueError):
-    """Raised when a task type is not supported by the mock."""
+class InvalidPayload(ValueError):
+    """Raised when a primitive payload violates its schema."""
 
 
 class _GoalTerminalState(Enum):
@@ -88,43 +89,68 @@ class GoalTerminalCoordinator:
 
 
 @dataclass(frozen=True)
-class StepFeedback:
+class ExecutionStep:
     progress: float
-    current_tag: int
-    next_tag: int
-    finished_stages: int
+    phase: str
+    details: dict
 
 
-def route_for(task_type: str, target_tags: Sequence[int]) -> list[int]:
-    if task_type == 'hold':
-        return []
-    if task_type == 'go_to_tag':
-        return [target_tags[0] if target_tags else FALLBACK_GOAL_TAG]
-    if task_type == 'patrol_route':
-        return list(target_tags or FALLBACK_PATROL_ROUTE)
-    raise UnsupportedTask(task_type)
+def parse_payload(primitive: str, payload_json: str) -> dict:
+    try:
+        payload = json.loads(payload_json)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise InvalidPayload('payload_json must contain valid JSON') from error
+
+    if not isinstance(payload, dict):
+        raise InvalidPayload('payload must be a JSON object')
+
+    if primitive == 'hold':
+        if payload:
+            raise InvalidPayload('hold payload must be empty')
+        return payload
+
+    if primitive == 'go_to_tag':
+        if set(payload) != {'target_tag'}:
+            raise InvalidPayload('go_to_tag payload requires only target_tag')
+        target_tag = payload['target_tag']
+        if isinstance(target_tag, bool) or not isinstance(target_tag, int):
+            raise InvalidPayload('target_tag must be an integer')
+        if target_tag < -(2**31) or target_tag > 2**31 - 1:
+            raise InvalidPayload('target_tag must fit in a signed 32-bit integer')
+        return payload
+
+    raise UnsupportedPrimitive(primitive)
 
 
-def step_feedback(route: Sequence[int], index: int) -> StepFeedback:
-    if index < 0 or index >= len(route):
-        raise IndexError(index)
-    current_tag = route[index]
-    return StepFeedback(
-        progress=(index + 1) / len(route),
-        current_tag=current_tag,
-        next_tag=route[index + 1] if index + 1 < len(route) else -1,
-        finished_stages=index + 1,
-    )
+def execution_steps(primitive: str, payload: dict) -> tuple[ExecutionStep, ...]:
+    if primitive == 'hold':
+        return (ExecutionStep(progress=1.0, phase='holding', details={}),)
+
+    if primitive == 'go_to_tag':
+        target_tag = payload['target_tag']
+        return tuple(
+            ExecutionStep(
+                progress=index / 3,
+                phase='moving_to_tag',
+                details={
+                    'current_tag': target_tag if index == 3 else -1,
+                    'next_tag': -1 if index == 3 else target_tag,
+                },
+            )
+            for index in range(1, 4)
+        )
+
+    raise UnsupportedPrimitive(primitive)
 
 
-def terminal_feedback(route: Sequence[int], finished_stages: int) -> StepFeedback:
-    if finished_stages < 0 or finished_stages > len(route):
-        raise ValueError(finished_stages)
-    return StepFeedback(
-        progress=finished_stages / len(route) if route else 1.0,
-        current_tag=route[finished_stages - 1] if finished_stages else -1,
-        next_tag=-1,
-        finished_stages=finished_stages,
+def canceled_feedback(last_step: ExecutionStep | None) -> ExecutionStep:
+    details = dict(last_step.details) if last_step is not None else {}
+    if 'next_tag' in details:
+        details['next_tag'] = -1
+    return ExecutionStep(
+        progress=last_step.progress if last_step is not None else 0.0,
+        phase='canceled',
+        details=details,
     )
 
 

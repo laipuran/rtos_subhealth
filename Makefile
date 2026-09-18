@@ -18,7 +18,7 @@ ENDPOINT_ARGS ?=
 
 .DEFAULT_GOAL := help
 
-.PHONY: help humble jazzy build fmt lint check webui webui-dev \
+.PHONY: help humble jazzy build ros-test fmt lint check webui webui-dev \
         run server endpoint clean
 
 ## help: list available targets
@@ -28,9 +28,10 @@ help:
 	@echo "  make humble          Build the Ubuntu 22.04 + ROS Humble image and enter it"
 	@echo "  make jazzy           Build the Ubuntu 24.04 + ROS Jazzy image and enter it"
 	@echo "  make build           Build Rust, plus ROS packages in the container"
+	@echo "  make ros-test        Build and run ROS package tests"
 	@echo "  make fmt             Format the Rust workspace"
 	@echo "  make lint            Check formatting and run clippy"
-	@echo "  make check           format + lint + build"
+	@echo "  make check           Rust lint + build + ROS tests"
 	@echo "  make webui           Install deps and build the WebUI"
 	@echo "  make webui-dev       Run the WebUI dev server"
 	@echo "  make run server      Run the control-plane server"
@@ -56,6 +57,15 @@ ifeq ($(IN_CONTAINER),1)
 	source /opt/ros/$(ROS_DISTRO)/setup.bash && colcon --log-base $(ROS_BUILD_ROOT)/log build --merge-install --base-paths ros2_ws/src --build-base $(ROS_BUILD_ROOT)/build/merged-symlink --install-base $(ROS_BUILD_ROOT)/install --symlink-install
 endif
 
+## ros-test: build and run all ROS package tests
+ros-test: build
+ifeq ($(IN_CONTAINER),1)
+	cd ros2_ws && source /opt/ros/$(ROS_DISTRO)/setup.bash && colcon --log-base $(ROS_BUILD_ROOT)/log test --merge-install --build-base $(ROS_BUILD_ROOT)/build/merged-symlink --install-base $(ROS_BUILD_ROOT)/install
+	colcon test-result --test-result-base $(ROS_BUILD_ROOT)/build/merged-symlink --verbose
+else
+	$(DEV) make ros-test
+endif
+
 ## fmt: format the Rust workspace
 fmt:
 	cargo fmt --all
@@ -65,8 +75,8 @@ lint:
 	cargo fmt --all --check
 	cargo clippy --all-targets -- -D warnings
 
-## check: lint + build
-check: lint build
+## check: lint + build + ROS tests
+check: lint ros-test
 
 ## webui: install deps and build the WebUI
 webui:

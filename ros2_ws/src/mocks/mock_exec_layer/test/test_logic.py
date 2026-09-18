@@ -3,84 +3,82 @@ import gc
 import threading
 import weakref
 
+import pytest
+
 from mock_exec_layer.logic import (
+    canceled_feedback,
+    execution_steps,
     GoalTerminalCoordinator,
-    route_for,
-    step_feedback,
-    terminal_feedback,
-    UnsupportedTask,
+    InvalidPayload,
+    parse_payload,
+    UnsupportedPrimitive,
     validate_step_delay,
 )
 
-import pytest
+
+def test_hold_payload_is_empty_object():
+    assert parse_payload('hold', '{}') == {}
 
 
-def test_hold_has_no_route():
-    assert route_for('hold', [1]) == []
+@pytest.mark.parametrize('payload', ['[]', '{"unexpected":1}', 'not-json'])
+def test_hold_rejects_invalid_payload(payload):
+    with pytest.raises(InvalidPayload):
+        parse_payload('hold', payload)
 
 
-def test_go_to_tag_uses_first_target():
-    assert route_for('go_to_tag', [7, 8]) == [7]
+def test_go_to_tag_payload_contains_one_signed_32_bit_integer():
+    assert parse_payload('go_to_tag', '{"target_tag":42}') == {'target_tag': 42}
+    assert parse_payload('go_to_tag', '{"target_tag":-1}') == {'target_tag': -1}
 
 
-def test_patrol_uses_all_targets():
-    assert route_for('patrol_route', [7, 8]) == [7, 8]
+@pytest.mark.parametrize(
+    'payload',
+    [
+        '{}',
+        '{"target_tag":true}',
+        '{"target_tag":2147483648}',
+        '{"target_tag":-2147483649}',
+        '{"target_tag":1,"extra":2}',
+    ],
+)
+def test_go_to_tag_rejects_invalid_payload(payload):
+    with pytest.raises(InvalidPayload):
+        parse_payload('go_to_tag', payload)
 
 
-def test_unknown_task_is_rejected():
-    with pytest.raises(UnsupportedTask):
-        route_for('dance', [])
+def test_unknown_primitive_is_rejected():
+    with pytest.raises(UnsupportedPrimitive):
+        parse_payload('dance', '{}')
 
 
-def test_final_step_clears_next_tag():
-    feedback = step_feedback([7, 8], 1)
-    assert feedback.progress == 1.0
-    assert feedback.current_tag == 8
-    assert feedback.next_tag == -1
+def test_hold_has_one_complete_feedback_step():
+    steps = execution_steps('hold', {})
+    assert len(steps) == 1
+    assert steps[0].progress == 1.0
+    assert steps[0].phase == 'holding'
+    assert steps[0].details == {}
 
 
-def test_go_to_tag_uses_fallback_without_targets():
-    assert route_for('go_to_tag', []) == [42]
+def test_go_to_tag_has_deterministic_progress_and_terminal_details():
+    steps = execution_steps('go_to_tag', {'target_tag': 42})
+    assert [step.progress for step in steps] == pytest.approx([1 / 3, 2 / 3, 1.0])
+    assert all(step.phase == 'moving_to_tag' for step in steps)
+    assert steps[0].details == {'current_tag': -1, 'next_tag': 42}
+    assert steps[-1].details == {'current_tag': 42, 'next_tag': -1}
 
 
-def test_patrol_uses_fallback_without_targets():
-    assert route_for('patrol_route', []) == [10, 20, 30]
-
-
-def test_feedback_reports_completed_stage_and_next_tag():
-    feedback = step_feedback([7, 8], 0)
-    assert feedback.progress == 0.5
-    assert feedback.current_tag == 7
-    assert feedback.next_tag == 8
-    assert feedback.finished_stages == 1
-
-
-@pytest.mark.parametrize('index', [-1, 2])
-def test_feedback_rejects_invalid_index(index):
-    with pytest.raises(IndexError):
-        step_feedback([7, 8], index)
+def test_canceled_feedback_preserves_progress_and_clears_next_tag():
+    running = execution_steps('go_to_tag', {'target_tag': 42})[0]
+    canceled = canceled_feedback(running)
+    assert canceled.progress == running.progress
+    assert canceled.phase == 'canceled'
+    assert canceled.details == {'current_tag': -1, 'next_tag': -1}
 
 
 def test_feedback_is_immutable():
-    feedback = step_feedback([7], 0)
+    feedback = execution_steps('hold', {})[0]
     with pytest.raises(FrozenInstanceError):
         feedback.progress = 0.5
-
-
-def test_hold_terminal_feedback_is_complete_and_has_no_next_tag():
-    feedback = terminal_feedback([], 0)
-    assert feedback.progress == 1.0
-    assert feedback.current_tag == -1
-    assert feedback.next_tag == -1
-    assert feedback.finished_stages == 0
-
-
-def test_canceled_terminal_feedback_preserves_completed_progress():
-    feedback = terminal_feedback([7, 8], 1)
-    assert feedback.progress == 0.5
-    assert feedback.current_tag == 7
-    assert feedback.next_tag == -1
-    assert feedback.finished_stages == 1
 
 
 def test_step_delay_must_be_non_negative():
