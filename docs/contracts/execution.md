@@ -1,6 +1,6 @@
 # Execution Contract
 
-当前 `services/platform/src/execution.rs` 定义：
+当前 `ros2_ws/src/services/platform/src/execution.rs` 定义：
 
 - `ExecutionCommand { task_id: TaskId, primitive: String, payload:
   serde_json::Value, deadline_ms: Option<u64> }`；

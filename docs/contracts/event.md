@@ -1,6 +1,6 @@
 # Event Contract
 
-当前 `services/platform/src/event.rs` 使用 `EventSequence(u64)`。`SystemEvent`
+当前 `ros2_ws/src/services/platform/src/event.rs` 使用 `EventSequence(u64)`。`SystemEvent`
 payload 精确为：
 
 - `TaskStateChanged { task_id: TaskId, state: TaskState }`；

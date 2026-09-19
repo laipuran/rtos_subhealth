@@ -21,8 +21,11 @@ make jazzy
 make build
 ```
 
-容器内 `make build` 同时构建 Rust workspace 和 `ros2_ws/src`，并使用
-`colcon --merge-install --symlink-install`。默认
+容器内 `make build` 以 `ros2_ws/src` 为唯一 colcon base path 构建 ROS
+workspace（包括 `ros2_ws/src/services/` 下的五个 Rust service packages），并使用
+`colcon --merge-install --symlink-install`；不会再用独立的 Cargo 命令重复构建
+这些 packages。主机上的 `make build` 仍使用 repository Cargo workspace。
+默认
 `ROS_BUILD_ROOT=/ws/$ROS_DISTRO`，因此 log、build intermediate 和 merged
 install 分别位于 `/ws/$ROS_DISTRO/log`、
 `/ws/$ROS_DISTRO/build/merged-symlink` 和 `/ws/$ROS_DISTRO/install`。

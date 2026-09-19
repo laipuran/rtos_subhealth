@@ -83,8 +83,8 @@ supported by this connector because `rclrs 0.7` does not expose the resolved
 ActionClient name; configure the final absolute name instead.
 
 The connector remains separate from the existing server integration. The
-legacy `services/` packages and WebUI are not moved or wired to this client
-until the task-client acceptance is complete.
+`ros2_ws/src/services/` packages and WebUI are not wired to this client;
+they remain separate ROS workspace components.
 
 ## Interface fields
 

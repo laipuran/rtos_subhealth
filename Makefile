@@ -32,7 +32,7 @@ help:
 	@echo
 	@echo "  make humble          Build the Ubuntu 22.04 + ROS Humble image and enter it"
 	@echo "  make jazzy           Build the Ubuntu 24.04 + ROS Jazzy image and enter it"
-	@echo "  make build           Build Rust, plus ROS packages in the container"
+	@echo "  make build           Build the ROS workspace packages in the container"
 	@echo "  make ros-test        Build and run ROS package tests"
 	@echo "  make ros-task-test   Run ros_task_client unit tests"
 	@echo "  make ros-task-integration  Run the explicit mock Exec integration"
@@ -57,13 +57,13 @@ jazzy:
 	ROS_DISTRO=jazzy UBUNTU_VERSION=24.04 $(COMPOSE) build --build-arg ROS_DISTRO=jazzy --build-arg UBUNTU_VERSION=24.04
 	ROS_DISTRO=jazzy UBUNTU_VERSION=24.04 $(COMPOSE) run --rm dev bash
 
-## build: Rust workspace build, plus ROS packages in the container
+## build: build ROS workspace packages in the container, or the Cargo workspace on the host
 build:
 ifeq ($(IN_CONTAINER),1)
+	# colcon-cargo regenerates this ignored file from the selected ROS distro;
+	# remove the previous distro's patches before building in the shared checkout.
+	rm -f .cargo/config.toml
 	source /opt/ros/$(ROS_DISTRO)/setup.bash && colcon --log-base $(ROS_BUILD_ROOT)/log build --merge-install --base-paths ros2_ws/src --build-base $(ROS_BUILD_ROOT)/build/merged-symlink --install-base $(ROS_BUILD_ROOT)/install --symlink-install
-	@build_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/ros-subhealth-build.XXXXXX")"; \
-		trap 'rm -rf -- "$$build_dir"' EXIT; \
-		cd "$$build_dir" && source /opt/ros/$(ROS_DISTRO)/setup.bash && source "$(ROS_BUILD_ROOT)/install/setup.bash" && cargo build --manifest-path "$(CURDIR)/Cargo.toml" --workspace
 else
 	cargo build --workspace
 endif
@@ -71,7 +71,7 @@ endif
 ## ros-test: build and run all ROS package tests
 ros-test: build
 ifeq ($(IN_CONTAINER),1)
-	cd ros2_ws && source /opt/ros/$(ROS_DISTRO)/setup.bash && colcon --log-base $(ROS_BUILD_ROOT)/log test --merge-install --build-base $(ROS_BUILD_ROOT)/build/merged-symlink --install-base $(ROS_BUILD_ROOT)/install
+	cd ros2_ws && source /opt/ros/$(ROS_DISTRO)/setup.bash && colcon --log-base $(ROS_BUILD_ROOT)/log test --base-paths src --merge-install --build-base $(ROS_BUILD_ROOT)/build/merged-symlink --install-base $(ROS_BUILD_ROOT)/install
 	colcon test-result --test-result-base $(ROS_BUILD_ROOT)/build/merged-symlink --verbose
 else
 	$(DEV) make ros-test

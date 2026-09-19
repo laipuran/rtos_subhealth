@@ -2,11 +2,11 @@
 resolver = "2"
 exclude = ["ros2_ws/src/control_plane/ros_task_client"]
 members = [
-    "services/platform",
-    "services/sensor",
-    "services/execution",
-    "services/orchestration",
-    "services/gateway",
+    "ros2_ws/src/services/platform",
+    "ros2_ws/src/services/sensor",
+    "ros2_ws/src/services/execution",
+    "ros2_ws/src/services/orchestration",
+    "ros2_ws/src/services/gateway",
 ]
 
 [workspace.package]

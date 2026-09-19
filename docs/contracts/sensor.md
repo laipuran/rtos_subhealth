@@ -1,6 +1,6 @@
 # Sensor Contract
 
-当前 `services/platform/src/sensor.rs` 定义：
+当前 `ros2_ws/src/services/platform/src/sensor.rs` 定义：
 
 - `SensorDescriptor { id: SensorId, kind: String, unit: Option<String> }`；
 - `SensorSample { sensor_id: SensorId, value: serde_json::Value, timestamp_ms:

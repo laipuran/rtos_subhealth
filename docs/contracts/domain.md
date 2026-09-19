@@ -1,6 +1,6 @@
 # Domain Contract
 
-当前 `services/platform/src/domain.rs` 定义的基础标识类型为：
+当前 `ros2_ws/src/services/platform/src/domain.rs` 定义的基础标识类型为：
 
 - `TaskId(String)`；
 - `DeviceId(String)`；

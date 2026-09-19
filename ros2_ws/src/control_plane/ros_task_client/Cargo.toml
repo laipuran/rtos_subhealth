@@ -5,6 +5,8 @@ edition = "2021"
 rust-version = "1.85"
 license = "Apache-2.0"
 
+[workspace]
+
 [dependencies]
 futures = "0.3"
 rclrs = "0.7"

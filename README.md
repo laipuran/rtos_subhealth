@@ -19,10 +19,10 @@ WebUI → Gateway → Orchestration → Execution → Endpoint Adapter → Backe
 ```text
 docs/contracts/                    业务契约文档
 ros2_ws/src/                       RFC 接口与开发验证 mock
-services/gateway/                  HTTP/WS 网关
-services/orchestration/            能力匹配与任务生命周期
-services/execution/                设备无关执行运行时
-services/sensor/                   Sensor registry 与 provider 访问
+ros2_ws/src/services/gateway/      HTTP/WS 网关
+ros2_ws/src/services/orchestration/ 能力匹配与任务生命周期
+ros2_ws/src/services/execution/     设备无关执行运行时
+ros2_ws/src/services/sensor/        Sensor registry 与 provider 访问
 adapters/                          endpoint adapters（待实现，见 TODO.md）
 webui/                             React/Vite 前端
 docs/architecture/                 权威架构与接口文档

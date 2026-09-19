@@ -269,6 +269,8 @@ async fn waits_for_server_that_appears_after_execution_starts() {
             Command::new(mock_executable)
                 .args([
                     "--ros-args",
+                    "-r",
+                    "__node:=late_mock_layer",
                     "-p",
                     "action_name:=/late_mock/execute_task",
                     "-p",

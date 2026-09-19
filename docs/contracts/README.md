@@ -1,6 +1,6 @@
 # 系统契约
 
-这里是当前系统契约的唯一文档入口。契约代码位于 `services/platform`，但不再
+这里是当前系统契约的唯一文档入口。契约代码位于 `ros2_ws/src/services/platform`，但不再
 以独立 `contracts/` workspace 暴露；所有 transport 和 service 都必须遵守本文档
 记录的语义。
 
