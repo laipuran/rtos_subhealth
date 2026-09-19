@@ -41,6 +41,51 @@ mock_exec_layer/
 Only `node.py` depends on ROS. The other modules contain independently tested
 Python logic.
 
+## Rust task client
+
+The Rust `ros_task_client` package is an `ament_cargo` package at
+`ros2_ws/src/control_plane/ros_task_client`. It consumes the generated
+`task_interfaces/action/ExecuteTask` types but keeps those generated types and
+the JSON wire representation private to `client.rs` and `mapper.rs`. Its public
+boundary is typed Rust commands, feedback, results, cancellation, and errors.
+
+The package is split into these responsibility-oriented modules:
+
+```text
+ros_task_client/
+├── src/client.rs   # ActionClient calls and Tokio relays
+├── src/config.rs   # endpoint and connection validation
+├── src/error.rs    # typed client, mapping, and ROS errors
+├── src/mapper.rs   # typed values <-> generated ROS messages and JSON
+├── src/runtime.rs  # dedicated blocking ROS executor lifecycle
+├── src/types.rs    # public commands, feedback, results, and sessions
+└── tests/          # sourced-environment and mock Exec coverage
+```
+
+The development image installs the distro-matched Rust ROS interface
+generator, `ros-${ROS_DISTRO}-rosidl-generator-rs`, from the ros2-rust apt
+repository. The repository branches are `jammy-humble` for Humble and
+`noble-jazzy` for Jazzy; this setup is in `docker/dev/Dockerfile`. A custom
+image must provide that package before `make build`, along with `rclrs` and
+the generated interfaces.
+
+ROS spinning and Tokio work have separate responsibilities. `RosTaskRuntime`
+owns a dedicated OS thread for the blocking `rclrs` executor. Tokio tasks
+relay native action feedback, results, and cancellation to the caller; no
+Tokio worker spins the ROS executor, and the executor thread does not wait on
+Tokio receivers.
+
+Endpoint selection is static: a configured `device_id` maps to one canonical
+absolute action name, for example `mock_exec` maps to
+`/mock_exec/execute_task`. The client validates this name and requires the
+five action graph entities before sending a goal. Action remapping is not
+supported by this connector because `rclrs 0.7` does not expose the resolved
+ActionClient name; configure the final absolute name instead.
+
+The connector remains separate from the existing server integration. The
+legacy `services/` packages and WebUI are not moved or wired to this client
+until the task-client acceptance is complete.
+
 ## Interface fields
 
 ### `ExecuteTask`
@@ -91,10 +136,45 @@ make build
 ```
 
 The container build runs `colcon build --merge-install --symlink-install`.
-With the default `ROS_BUILD_ROOT=/ws`, logs, intermediate files, and the merged
-install are written to `/ws/log`, `/ws/build/merged-symlink`, and `/ws/install`;
-they are not written below `ros2_ws/`. `make humble` builds and enters the
-Humble image instead.
+With the default `ROS_BUILD_ROOT=/ws/$ROS_DISTRO`, logs, intermediate files, and
+the merged install are written below `/ws/$ROS_DISTRO` (for example,
+`/ws/jazzy/log`, `/ws/jazzy/build/merged-symlink`, and
+`/ws/jazzy/install`). They are not written below `ros2_ws/`, and the existing
+top-level `/ws` data is left untouched. Set `ROS_BUILD_ROOT` to override this
+location. `make humble` builds and enters the Humble image instead.
+
+Run the Rust package checks explicitly after the build:
+
+```bash
+# inside the sourced development container
+make ros-task-test
+make ros-task-integration
+```
+
+The unit target sources both `/opt/ros/$ROS_DISTRO/setup.bash` and
+`$ROS_BUILD_ROOT/install/setup.bash` before its package Cargo test. It uses a temporary
+Cargo target by default so generated ROS linkage cannot reuse stale artifacts;
+set `ROS_TASK_CARGO_TARGET=/ws/$ROS_DISTRO/target/ros-task-client` when intentionally
+reusing a verified target. The integration target starts the mock only for
+that explicit command and performs the same sourced setup through its runner;
+it is not part of lint-only checks.
+
+The Rust package's `Cargo.lock` is intentionally not tracked. `colcon-cargo`
+generates Cargo patches for the selected ROS distribution, so dependency
+resolution is distro-specific (for example, Jazzy and Humble use different
+`action_msgs` versions). `make ros-task-test` therefore allows Cargo to create
+or update the package lock in the ROS build environment. The top-level Rust
+workspace remains tracked and reproducible with its own pure-Cargo lockfile;
+its build, lint, and integration runner use isolated working directories so
+the generated ROS patch config cannot add `[[patch.unused]]` entries to that
+lockfile.
+
+The same commands can be run from the host without opening a shell:
+
+```bash
+docker compose -f docker/dev/compose.yaml run --rm dev make ros-task-test
+docker compose -f docker/dev/compose.yaml run --rm dev make ros-task-integration
+```
 
 Start the execution mock inside the container:
 
@@ -130,7 +210,7 @@ install. To use ROS CLI tools, open another sourced container shell:
 ```bash
 docker compose -f docker/dev/compose.yaml run --rm dev bash
 source /opt/ros/$ROS_DISTRO/setup.bash
-source /ws/install/setup.bash
+source "$ROS_BUILD_ROOT/install/setup.bash"
 ```
 
 Inspect both installed interfaces and discover the action with its type:

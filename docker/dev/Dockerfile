@@ -21,12 +21,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ros-${ROS_DISTRO}-rosidl-default-runtime \
       ros-${ROS_DISTRO}-test-msgs \
       ros-${ROS_DISTRO}-example-interfaces \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN case "${ROS_DISTRO}:${UBUNTU_VERSION}" in \
+      humble:22.04) package_branch=jammy-humble ;; \
+      jazzy:24.04) package_branch=noble-jazzy ;; \
+      *) echo "unsupported ROS/Ubuntu pair: ${ROS_DISTRO}/${UBUNTU_VERSION}" >&2; exit 2 ;; \
+    esac \
+ && echo "deb [trusted=yes] https://raw.githubusercontent.com/ros2-rust/rosidl_rust/${package_branch}/ ./" \
+      > /etc/apt/sources.list.d/ros2-rust-rosidl.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends ros-${ROS_DISTRO}-rosidl-generator-rs \
  && rm -rf /var/lib/apt/lists/*
 
-# The base image already ships an `ubuntu` user at UID/GID 1000. Reuse it as
-# the non-root developer; the Dev Container `updateRemoteUserUID` setting keeps
-# its UID in sync with the host user when they differ.
+# Reuse the base image's `ubuntu` user when present (Jazzy), and create the
+# same non-root developer on base images that do not ship one (Humble). The Dev
+# Container `updateRemoteUserUID` setting keeps its UID in sync with the host
+# user when they differ.
 RUN printf 'ubuntu ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/ubuntu \
+ && if ! getent group ubuntu >/dev/null; then groupadd --gid 1000 ubuntu; fi \
+ && if ! id -u ubuntu >/dev/null 2>&1; then useradd --uid 1000 --gid ubuntu --create-home --shell /bin/bash ubuntu; fi \
  && chmod 0440 /etc/sudoers.d/ubuntu
 
 # Pinned Rust toolchain (matches rust-toolchain.toml), shared so both root and
@@ -55,8 +69,10 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
 RUN mkdir -p /ws && chown ubuntu:ubuntu /ws \
  && chmod -R a+w /usr/local/cargo /usr/local/rustup
 
-# colcon plugins that teach colcon to build Cargo packages (rclrs).
-RUN pip install --no-cache-dir --break-system-packages colcon-cargo colcon-ros-cargo || true
+# colcon plugins that teach colcon to build Cargo packages (rclrs). Older
+# Ubuntu images do not support pip's --break-system-packages option.
+RUN pip install --no-cache-dir --break-system-packages colcon-cargo colcon-ros-cargo \
+ || pip install --no-cache-dir colcon-cargo colcon-ros-cargo
 
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ENV ROS_DOMAIN_ID=1

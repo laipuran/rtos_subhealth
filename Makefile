@@ -13,13 +13,18 @@ IN_CONTAINER := $(if $(wildcard /.dockerenv),1,0)
 
 # Overridable settings.
 GATEWAY_HTTP_PORT ?= 5000
-ROS_BUILD_ROOT ?= $(if $(ROS_RUST_WS),$(ROS_RUST_WS),/ws)
+ROS_BUILD_ROOT ?= /ws/$(ROS_DISTRO)
 ENDPOINT_ARGS ?=
+ROS_TASK_MANIFEST := ros2_ws/src/control_plane/ros_task_client/Cargo.toml
+ROS_TASK_INTEGRATION := ros2_ws/src/control_plane/ros_task_client/test/run_mock_exec_integration.sh
+# Leave empty for an isolated target per task-test invocation. Set this when
+# deliberately reusing a known-good generated ROS build directory.
+ROS_TASK_CARGO_TARGET ?=
 
 .DEFAULT_GOAL := help
 
-.PHONY: help humble jazzy build ros-test fmt lint check webui webui-dev \
-        run server endpoint clean
+.PHONY: help humble jazzy build ros-test ros-task-test ros-task-integration \
+        fmt lint check webui webui-dev run server endpoint clean
 
 ## help: list available targets
 help:
@@ -29,6 +34,8 @@ help:
 	@echo "  make jazzy           Build the Ubuntu 24.04 + ROS Jazzy image and enter it"
 	@echo "  make build           Build Rust, plus ROS packages in the container"
 	@echo "  make ros-test        Build and run ROS package tests"
+	@echo "  make ros-task-test   Run ros_task_client unit tests"
+	@echo "  make ros-task-integration  Run the explicit mock Exec integration"
 	@echo "  make fmt             Format the Rust workspace"
 	@echo "  make lint            Check formatting and run clippy"
 	@echo "  make check           Rust lint + build + ROS tests"
@@ -52,9 +59,13 @@ jazzy:
 
 ## build: Rust workspace build, plus ROS packages in the container
 build:
-	cargo build --workspace
 ifeq ($(IN_CONTAINER),1)
 	source /opt/ros/$(ROS_DISTRO)/setup.bash && colcon --log-base $(ROS_BUILD_ROOT)/log build --merge-install --base-paths ros2_ws/src --build-base $(ROS_BUILD_ROOT)/build/merged-symlink --install-base $(ROS_BUILD_ROOT)/install --symlink-install
+	@build_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/ros-subhealth-build.XXXXXX")"; \
+		trap 'rm -rf -- "$$build_dir"' EXIT; \
+		cd "$$build_dir" && source /opt/ros/$(ROS_DISTRO)/setup.bash && source "$(ROS_BUILD_ROOT)/install/setup.bash" && cargo build --manifest-path "$(CURDIR)/Cargo.toml" --workspace
+else
+	cargo build --workspace
 endif
 
 ## ros-test: build and run all ROS package tests
@@ -66,6 +77,26 @@ else
 	$(DEV) make ros-test
 endif
 
+## ros-task-test: run the typed Rust task-client unit tests
+ros-task-test: build
+ifeq ($(IN_CONTAINER),1)
+	@target_dir="$(if $(strip $(ROS_TASK_CARGO_TARGET)),$(ROS_TASK_CARGO_TARGET),$$(mktemp -d "$${TMPDIR:-/tmp}/ros-task-client-test.XXXXXX"))"; \
+	 cleanup_target=0; \
+	 if [ -z "$(strip $(ROS_TASK_CARGO_TARGET))" ]; then cleanup_target=1; fi; \
+	 trap 'if [ "$$cleanup_target" -eq 1 ]; then rm -rf -- "$$target_dir"; fi' EXIT; \
+	source /opt/ros/$(ROS_DISTRO)/setup.bash && source "$(ROS_BUILD_ROOT)/install/setup.bash" && CARGO_TARGET_DIR="$$target_dir" cargo test --manifest-path $(ROS_TASK_MANIFEST)
+else
+	$(DEV) make ros-task-test
+endif
+
+## ros-task-integration: run the real ROS mock Exec integration explicitly
+ros-task-integration: build
+ifeq ($(IN_CONTAINER),1)
+	ROS_BUILD_ROOT="$(ROS_BUILD_ROOT)" $(if $(strip $(ROS_TASK_CARGO_TARGET)),CARGO_TARGET_DIR="$(ROS_TASK_CARGO_TARGET)") "$(ROS_TASK_INTEGRATION)"
+else
+	$(DEV) make ros-task-integration
+endif
+
 ## fmt: format the Rust workspace
 fmt:
 	cargo fmt --all
@@ -73,10 +104,12 @@ fmt:
 ## lint: formatting + clippy
 lint:
 	cargo fmt --all --check
-	cargo clippy --all-targets -- -D warnings
+	@lint_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/ros-subhealth-lint.XXXXXX")"; \
+		trap 'rm -rf -- "$$lint_dir"' EXIT; \
+		cd "$$lint_dir" && cargo clippy --manifest-path "$(CURDIR)/Cargo.toml" --all-targets -- -D warnings
 
 ## check: lint + build + ROS tests
-check: lint ros-test
+check: ros-test ros-task-test lint
 
 ## webui: install deps and build the WebUI
 webui:

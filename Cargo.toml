@@ -1,5 +1,6 @@
 [workspace]
 resolver = "2"
+exclude = ["ros2_ws/src/control_plane/ros_task_client"]
 members = [
     "services/platform",
     "services/sensor",

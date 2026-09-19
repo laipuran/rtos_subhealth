@@ -22,9 +22,12 @@ make build
 ```
 
 容器内 `make build` 同时构建 Rust workspace 和 `ros2_ws/src`，并使用
-`colcon --merge-install --symlink-install`。默认 `ROS_BUILD_ROOT=/ws`，因此 log、
-build intermediate 和 merged install 分别位于 `/ws/log`、
-`/ws/build/merged-symlink` 和 `/ws/install`。
+`colcon --merge-install --symlink-install`。默认
+`ROS_BUILD_ROOT=/ws/$ROS_DISTRO`，因此 log、build intermediate 和 merged
+install 分别位于 `/ws/$ROS_DISTRO/log`、
+`/ws/$ROS_DISTRO/build/merged-symlink` 和 `/ws/$ROS_DISTRO/install`。
+Humble 与 Jazzy 共用 named volume 但不会共用这些构建状态；也可以设置
+`ROS_BUILD_ROOT` 覆盖默认位置。
 
 ## 运行
 
