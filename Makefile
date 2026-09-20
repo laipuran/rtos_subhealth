@@ -93,7 +93,12 @@ endif
 ## run: dispatch to exactly one runtime mode
 run:
 	@case " $(MAKECMDGOALS) " in \
-	  *" server "*) if [ "$(IN_CONTAINER)" = "1" ]; then GATEWAY_HTTP_PORT="$(GATEWAY_HTTP_PORT)" cargo run -p gateway; else $(DEV) make run server GATEWAY_HTTP_PORT="$(GATEWAY_HTTP_PORT)"; fi ;; \
+	  *" server "*) if [ "$(IN_CONTAINER)" = "1" ]; then \
+	    test -f "$(ROS_BUILD_ROOT)/install/setup.bash" || { echo "ROS install setup not found at $(ROS_BUILD_ROOT)/install/setup.bash; run 'make build' inside the ROS container first" >&2; exit 2; }; \
+	    source /opt/ros/$(ROS_DISTRO)/setup.bash && \
+	    source "$(ROS_BUILD_ROOT)/install/setup.bash" && \
+	    GATEWAY_HTTP_PORT="$(GATEWAY_HTTP_PORT)" cargo run -p gateway; \
+	  else $(DEV) make run server GATEWAY_HTTP_PORT="$(GATEWAY_HTTP_PORT)"; fi ;; \
 	  *" endpoint "*) \
 	    case "$(DEVICE_TYPE)" in \
 	      mock-exec) ros_package=mock_exec_layer; ros_executable=mock_exec_layer_node ;; \
