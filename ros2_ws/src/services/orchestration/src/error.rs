@@ -1,7 +1,5 @@
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum OrchestrationError {
-    #[error("no device satisfies the task requirements")]
-    NoDevice,
     #[error("device is busy")]
     Busy,
     #[error("task already exists")]
