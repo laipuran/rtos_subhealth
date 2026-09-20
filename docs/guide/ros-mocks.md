@@ -136,39 +136,6 @@ the merged install are written below `/ws/$ROS_DISTRO` (for example,
 top-level `/ws` data is left untouched. Set `ROS_BUILD_ROOT` to override this
 location. `make humble` builds and enters the Humble image instead.
 
-Run the Rust package checks explicitly after the build:
-
-```bash
-# inside the sourced development container
-make ros-task-test
-make ros-task-integration
-```
-
-The unit target sources both `/opt/ros/$ROS_DISTRO/setup.bash` and
-`$ROS_BUILD_ROOT/install/setup.bash` before its package Cargo test. It uses a temporary
-Cargo target by default so generated ROS linkage cannot reuse stale artifacts;
-set `ROS_TASK_CARGO_TARGET=/ws/$ROS_DISTRO/target/ros-task-client` when intentionally
-reusing a verified target. The integration target starts the mock only for
-that explicit command and performs the same sourced setup through its runner;
-it is not part of lint-only checks.
-
-The Rust package's `Cargo.lock` is intentionally not tracked. `colcon-cargo`
-generates Cargo patches for the selected ROS distribution, so dependency
-resolution is distro-specific (for example, Jazzy and Humble use different
-`action_msgs` versions). `make ros-task-test` therefore allows Cargo to create
-or update the package lock in the ROS build environment. The top-level Rust
-workspace remains tracked and reproducible with its own pure-Cargo lockfile;
-its build, lint, and integration runner use isolated working directories so
-the generated ROS patch config cannot add `[[patch.unused]]` entries to that
-lockfile.
-
-The same commands can be run from the host without opening a shell:
-
-```bash
-docker compose -f docker/dev/compose.yaml run --rm dev make ros-task-test
-docker compose -f docker/dev/compose.yaml run --rm dev make ros-task-integration
-```
-
 Start the execution mock inside the container:
 
 ```bash
