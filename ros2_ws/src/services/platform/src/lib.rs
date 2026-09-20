@@ -6,6 +6,9 @@ pub mod task;
 
 pub use domain::{DeviceDescriptor, DeviceId, DeviceState, SensorId, TaskId};
 pub use event::{EventSequence, SystemEvent};
-pub use execution::{ExecutionError, ExecutionFeedback, ExecutionResult, Executor};
+pub use execution::{
+    ExecutionError, ExecutionFeedback, ExecutionFeedbackStream, ExecutionResult,
+    ExecutionResultFuture, ExecutionSession, Executor,
+};
 pub use sensor::{SensorDescriptor, SensorFilter, SensorProvider, SensorSample, SensorStream};
 pub use task::{Primitive, Task, TaskState};

@@ -147,10 +147,6 @@ dependencies = [
 [[package]]
 name = "execution"
 version = "0.1.0"
-dependencies = [
- "platform",
- "thiserror",
-]
 
 [[package]]
 name = "form_urlencoded"

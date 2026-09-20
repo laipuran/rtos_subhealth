@@ -1,5 +1,5 @@
 use platform::{DeviceId, TaskId};
-use platform::{ExecutionFeedback, ExecutionResult};
+use platform::{ExecutionFeedback, ExecutionResult, ExecutionSession};
 use platform::{Task, TaskState};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -9,7 +9,7 @@ use crate::error::OrchestrationError;
 mod error;
 
 pub trait ExecutionPort: Send + Sync {
-    fn execute(&self, task: Task) -> Result<(), String>;
+    fn execute(&self, task: Task) -> Result<ExecutionSession, String>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,7 +35,7 @@ impl Orchestrator {
         }
     }
 
-    pub fn submit(&mut self, task: Task) -> Result<DeviceId, OrchestrationError> {
+    pub fn submit(&mut self, task: Task) -> Result<ExecutionSession, OrchestrationError> {
         if self.active.contains_key(&task.id) {
             return Err(OrchestrationError::Duplicate);
         }
@@ -43,7 +43,8 @@ impl Orchestrator {
         if self.device_tasks.contains_key(&device_id) {
             return Err(OrchestrationError::Busy);
         }
-        self.execution
+        let session = self
+            .execution
             .execute(task.clone())
             .map_err(OrchestrationError::Execution)?;
         self.device_tasks.insert(device_id.clone(), task.id.clone());
@@ -56,7 +57,7 @@ impl Orchestrator {
                 phase: "accepted".into(),
             },
         );
-        Ok(device_id)
+        Ok(session)
     }
 
     pub fn feedback(

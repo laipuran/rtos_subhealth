@@ -2,43 +2,72 @@
 
 ## Status
 
-Implemented the Task 2 scope. Orchestration now forwards the canonical `Task` directly to a minimal execution submission boundary, tracks occupancy by the task's concrete `device_id`, and contains no registry, capability-selection, or cancellation path. The unused generic execution runtime was removed.
+Implemented Task 2, including the review fix. Orchestration forwards the canonical `Task` directly, tracks occupancy by its concrete `device_id`, and returns the execution feedback/result session to the caller. The session is transport-neutral, contains no cancellation API, and remains compatible with `Arc<dyn ExecutionPort>`.
 
 ## Changed files
 
+- `ros2_ws/src/services/platform/src/execution.rs`
+  - Added the transport-neutral feedback stream, terminal result future, and `ExecutionSession` abstractions.
+- `ros2_ws/src/services/platform/src/lib.rs`
+  - Re-exported the execution session types.
 - `ros2_ws/src/services/orchestration/src/lib.rs`
-  - Changed `ExecutionPort::execute` to accept the canonical `Task` directly.
-  - Removed cancellation from `ExecutionPort` and `Orchestrator`.
-  - Removed registry and sensor ownership and their accessors.
-  - Kept duplicate-task and busy-device validation.
-  - Removed the redundant `ActiveTask.device_id`; occupancy cleanup uses `task.device_id`.
-  - Removed the canceled terminal-state branch.
+  - Changed `ExecutionPort::execute` and `Orchestrator::submit` to return `ExecutionSession` instead of discarding it.
+  - Retains direct canonical `Task` forwarding, duplicate-task validation, busy-device validation, and active-task transitions.
+  - Contains no registry, capability-selection, or cancellation path.
 - `ros2_ws/src/services/orchestration/src/device.rs`
-  - Deleted the unconsumed registry, device selection, and capability predicate.
+  - Deleted the unconsumed registry, device selection, and capability predicate in the original Task 2 change.
 - `ros2_ws/src/services/orchestration/src/error.rs`
-  - Removed the obsolete `NoDevice` selection error.
+  - Removed the obsolete `NoDevice` selection error in the original Task 2 change.
 - `ros2_ws/src/services/execution/src/lib.rs`
-  - Removed `ExecutionRuntime`, `ExecutionHandle` storage, runtime state/error types, cancellation, polling, and generic executor/sensor ownership.
-  - Left the crate ready for the concrete ROS transport composition in Task 5.
+  - Removed the unused generic execution runtime and retained only the crate-level composition note in the original Task 2 change.
+- `ros2_ws/src/services/execution/Cargo.toml`
+  - Removed the now-unused `platform` and `thiserror` dependencies from the empty crate.
+- `Cargo.lock`
+  - Removed those execution package dependency edges.
+
+## Exact session contract
+
+```rust
+pub type ExecutionFeedbackStream =
+    Pin<Box<dyn Stream<Item = Result<ExecutionFeedback, ExecutionError>> + Send>>;
+pub type ExecutionResultFuture =
+    Pin<Box<dyn Future<Output = Result<ExecutionResult, ExecutionError>> + Send>>;
+
+pub struct ExecutionSession {
+    pub feedback: ExecutionFeedbackStream,
+    pub result: ExecutionResultFuture,
+}
+
+pub trait ExecutionPort: Send + Sync {
+    fn execute(&self, task: Task) -> Result<ExecutionSession, String>;
+}
+
+pub fn submit(&mut self, task: Task) -> Result<ExecutionSession, OrchestrationError>;
+```
+
+The boxed stream and future make the session concrete and the port object-safe, preserving `Arc<dyn ExecutionPort>` usage. The abstractions depend only on platform domain types and `futures-core`; they do not depend on ROS or `ros_task_client`.
 
 ## Verification
 
-- `cargo fmt --manifest-path /home/duckran/codes/rtos_subhealth/Cargo.toml --all -- --check`
-  - Passed with no output.
-- `cargo check --manifest-path /home/duckran/codes/rtos_subhealth/Cargo.toml --package orchestration --package execution` (run from `/tmp/opencode` to avoid the repository-local generated ROS Cargo patch configuration)
-  - Passed; both changed crates and `platform` compiled successfully.
-- `cargo clippy --manifest-path /home/duckran/codes/rtos_subhealth/Cargo.toml --package orchestration --package execution --lib -- -D warnings` (run from `/tmp/opencode`)
-  - Passed with no warnings.
-- `cargo check --manifest-path /home/duckran/codes/rtos_subhealth/Cargo.toml --workspace` (run from `/tmp/opencode`)
-  - Reached and successfully checked `platform`, `execution`, `sensor`, and `orchestration`.
-  - Failed in the out-of-scope Gateway Task 3 code with five pre-existing stale-contract errors: removed `TaskTarget`, removed `TaskState::Canceled`, optional `device_id`, and removed `required_capabilities`/`parameters` fields.
-- Focused source searches under `orchestration/src` and `execution/src`
-  - No references remain to capability selection, parameters, cancellation, `ExecutionHandle`, `ExecutionRuntime`, or the removed command/runtime types.
-- `git diff --check`
-  - Passed with no output.
+- `cargo fmt --manifest-path /home/duckran/codes/rtos_subhealth/Cargo.toml --package platform --package orchestration -- --check` (from `/tmp/opencode`)
+  - Exit 0; no output.
+- `cargo check --manifest-path /home/duckran/codes/rtos_subhealth/Cargo.toml --package platform --package orchestration --package execution` (from `/tmp/opencode`)
+  - Exit 0; all three Task 2 crates checked successfully.
+- `cargo clippy --manifest-path /home/duckran/codes/rtos_subhealth/Cargo.toml --package platform --package orchestration --package execution --lib -- -D warnings` (from `/tmp/opencode`)
+  - Exit 0; no warnings.
+- `cargo tree --manifest-path /home/duckran/codes/rtos_subhealth/ros2_ws/src/services/execution/Cargo.toml --depth 1` (from `/tmp/opencode`)
+  - Exit 0; output contains only the `execution` package, confirming the empty crate has no dependencies.
+- `cargo check --manifest-path /home/duckran/codes/rtos_subhealth/Cargo.toml --workspace` (from `/tmp/opencode`)
+  - Exit 101 after successfully checking the Task 2 crates.
+  - Failed in out-of-scope Gateway code with the same five stale Task 1 contract errors: removed `TaskTarget`, removed `TaskState::Canceled`, optional `device_id`, and removed `required_capabilities`/`parameters` fields.
+- Focused source searches
+  - No ROS or `ros_task_client` references exist in platform or orchestration.
+  - No service-side `ExecutionPort::execute(Task) -> Result<(), String>` or `submit(Task) -> Result<DeviceId, _>` signature remains.
+- `git diff --check` on the changed Task 2 source/manifests
+  - Exit 0; no output.
 
 ## Concerns / follow-up
 
-- The current ROS client exposes an asynchronous feedback/result session, while Task 2 is prohibited from importing ROS types or `ros_task_client` into Orchestration. The smallest coherent boundary is therefore `ExecutionPort::execute(Task) -> Result<(), String>`, with feedback and terminal results continuing to enter through `Orchestrator::feedback` and `Orchestrator::complete`. Task 5 must implement the concrete Execution-owned ROS session and route those events back without introducing an adapter layer.
-- Full workspace verification remains blocked until Task 3 updates Gateway to the Task 1 canonical contract.
-- Running Cargo from the repository root additionally loads `.cargo/config.toml`, whose generated ROS patch paths point to unavailable `/opt/ros/jazzy` packages in this environment. Verification was run from `/tmp/opencode` with the repository manifest path so Cargo checked the same workspace sources without that generated local configuration.
+- Full workspace verification remains blocked by the out-of-scope Gateway stale-contract errors listed above.
+- Runtime composition must consume both returned session fields and translate its transport-specific errors into `ExecutionError`; that work is intentionally outside Task 2.
+- Cargo commands are run from `/tmp/opencode` with an absolute manifest path to avoid the repository-local generated ROS Cargo patch configuration.
