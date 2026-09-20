@@ -63,3 +63,18 @@ No tests were run or added, per repository and task instructions.
 - The in-repository workspace check remains environment-blocked by the missing local ROS generated crate path.
 - As expected for Task 1, the full workspace does not compile until later tasks update Orchestration and ExecutionRuntime consumers. Those files were intentionally left unchanged to preserve scope.
 - Existing unrelated working-tree changes in `.devcontainer/devcontainer.json`, `.gitignore`, `Cargo.lock`, `Cargo.toml`, `AGENTS.md`, and the plan document were not modified or included in this task's commit.
+
+## Review fix: remove canceled task state
+
+Review identified `TaskState::Canceled` as stale cancellation contract surface. Removed that variant from `ros2_ws/src/services/platform/src/task.rs`. A scoped search confirmed there were no other cancellation symbols or now-obsolete imports/branches in the Task 1 Rust contract files or their three contract documents.
+
+### Review fix verification
+
+1. `cargo fmt --check`
+   - Exit 0; formatting is clean.
+2. Scoped cancellation search across `task.rs`, `domain.rs`, `execution.rs`, `lib.rs`, `task.md`, `execution.md`, and `domain.md`.
+   - No stale cancellation symbols found.
+3. Isolated platform-package check outside the repository Cargo configuration:
+   - Refreshed `/tmp/opencode/task-1-platform-check` from `ros2_ws/src/services/platform`.
+   - Ran `cargo check --manifest-path Cargo.toml` from the isolated directory.
+   - Exit 0; `platform` compiled successfully.

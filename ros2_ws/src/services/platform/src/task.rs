@@ -19,7 +19,6 @@ pub enum TaskState {
     Accepted,
     Running,
     Succeeded,
-    Canceled,
     Failed,
 }
 
