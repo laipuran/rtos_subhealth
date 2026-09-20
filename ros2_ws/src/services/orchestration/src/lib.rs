@@ -5,9 +5,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::{future::Future, pin::Pin};
 
-use crate::error::OrchestrationError;
-
 mod error;
+
+pub use error::OrchestrationError;
 
 pub trait ExecutionPort: Send + Sync {
     fn execute(

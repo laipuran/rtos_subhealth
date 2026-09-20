@@ -1,59 +1,45 @@
+use orchestration::OrchestrationError;
 use platform::TaskId;
 
+use crate::{
+    dto::{CreateTask, TaskView},
+    state::AppState,
+};
 use axum::{
     extract::{Path, State, WebSocketUpgrade},
     http::StatusCode,
     response::IntoResponse,
     Json,
 };
-use platform::TaskState;
 
-use crate::{
-    dto::{CreateTask, TaskView},
-    state::GatewayState,
-};
-
-pub(crate) async fn list_tasks(State(state): State<GatewayState>) -> Json<Vec<TaskView>> {
-    Json(state.tasks.read().await.values().cloned().collect())
+pub async fn list_tasks(State(state): State<AppState>) -> Json<Vec<TaskView>> {
+    Json(state.list_tasks().await)
 }
 
-pub(crate) async fn create_task(
-    State(state): State<GatewayState>,
+pub async fn create_task(
+    State(state): State<AppState>,
     Json(input): Json<CreateTask>,
-) -> (StatusCode, Json<TaskView>) {
-    (StatusCode::ACCEPTED, Json(state.create_task(input).await))
+) -> Result<(StatusCode, Json<TaskView>), StatusCode> {
+    state
+        .create_task(input)
+        .await
+        .map(|view| (StatusCode::ACCEPTED, Json(view)))
+        .map_err(submission_status)
 }
 
-pub(crate) async fn get_task(
-    State(state): State<GatewayState>,
+pub async fn get_task(
+    State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<TaskView>, StatusCode> {
     state
-        .tasks
-        .read()
+        .task(&TaskId(id))
         .await
-        .get(&TaskId(id))
-        .cloned()
         .map(Json)
         .ok_or(StatusCode::NOT_FOUND)
 }
 
-pub(crate) async fn cancel_task(
-    State(state): State<GatewayState>,
-    Path(id): Path<String>,
-) -> Result<Json<TaskView>, StatusCode> {
-    let mut tasks = state.tasks.write().await;
-    let task = tasks.get_mut(&TaskId(id)).ok_or(StatusCode::NOT_FOUND)?;
-    task.state = TaskState::Canceled;
-    task.phase = "canceled".into();
-    Ok(Json(task.clone()))
-}
-
-pub(crate) async fn events(
-    State(state): State<GatewayState>,
-    ws: WebSocketUpgrade,
-) -> impl IntoResponse {
-    let mut receiver = state.events.subscribe();
+pub async fn events(State(state): State<AppState>, ws: WebSocketUpgrade) -> impl IntoResponse {
+    let mut receiver = state.subscribe();
     ws.on_upgrade(move |mut socket| async move {
         while let Ok((sequence, event)) = receiver.recv().await {
             let payload = serde_json::json!({ "sequence": sequence, "event": event });
@@ -66,4 +52,12 @@ pub(crate) async fn events(
             }
         }
     })
+}
+
+fn submission_status(error: OrchestrationError) -> StatusCode {
+    match error {
+        OrchestrationError::Busy | OrchestrationError::Duplicate => StatusCode::CONFLICT,
+        OrchestrationError::Execution(_) => StatusCode::BAD_GATEWAY,
+        OrchestrationError::UnknownTask => StatusCode::INTERNAL_SERVER_ERROR,
+    }
 }
