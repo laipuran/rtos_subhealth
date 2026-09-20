@@ -11,12 +11,13 @@
   modified.
 - Changed host-side `make run server` to invoke `make run server` through the
   existing `$(DEV)` container while passing `GATEWAY_HTTP_PORT`; the
-  container-side path still runs Cargo directly.
+  container-side path still runs Cargo directly. Quoted the port assignment in
+  both paths so the environment value is passed safely.
 
 ## Verification
 
 - `make -n run server`: passed; showed
-  `docker compose ... run --rm dev make run server GATEWAY_HTTP_PORT=5000`.
+  `docker compose ... run --rm dev make run server GATEWAY_HTTP_PORT="5000"`.
 - `make -n check`: passed; showed only formatting, clippy, and workspace
   build commands, with no test target.
 - `make run server` under a 15-second timeout: reached and created the dev
