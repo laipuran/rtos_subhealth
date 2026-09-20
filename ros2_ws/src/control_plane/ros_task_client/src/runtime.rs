@@ -31,7 +31,7 @@ enum ExecutorExit {
 }
 
 impl RosTaskRuntime {
-    pub(crate) fn start(
+    pub fn start(
         executor: Executor,
         stopping: Arc<AtomicBool>,
         shutdown_tx: watch::Sender<bool>,

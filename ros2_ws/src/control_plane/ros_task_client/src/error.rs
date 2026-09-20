@@ -21,8 +21,6 @@ pub enum RosTaskError {
     },
     #[error("goal rejected for task {task_id}")]
     GoalRejected { task_id: String },
-    #[error("cancel rejected for task {task_id}: {reason}")]
-    CancelRejected { task_id: String, reason: String },
     #[error("mapping error for {field}: {message}")]
     Mapping {
         field: &'static str,

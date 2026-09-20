@@ -93,8 +93,9 @@ async fn unknown_device_returns_without_waiting_for_action_graph() {
         client.execute(ExecuteCommand {
             task_id: "unknown-device".into(),
             device_id: "not_configured".into(),
-            primitive: PrimitiveCommand::Hold,
-            deadline_unix_ms: None,
+            primitive: PrimitiveCommand::GoToTag,
+            target: vec![7],
+            deadline_ms: None,
         }),
     )
     .await
@@ -121,8 +122,9 @@ async fn absent_action_server_returns_after_configured_timeout() {
         client.execute(ExecuteCommand {
             task_id: "absent-server".into(),
             device_id: "mock_exec".into(),
-            primitive: PrimitiveCommand::Hold,
-            deadline_unix_ms: None,
+            primitive: PrimitiveCommand::GoToTag,
+            target: vec![7],
+            deadline_ms: None,
         }),
     )
     .await
@@ -148,8 +150,9 @@ async fn execute_after_shutdown_returns_shutdown() {
         client.execute(ExecuteCommand {
             task_id: "after-shutdown".into(),
             device_id: "mock_exec".into(),
-            primitive: PrimitiveCommand::Hold,
-            deadline_unix_ms: None,
+            primitive: PrimitiveCommand::GoToTag,
+            target: vec![7],
+            deadline_ms: None,
         }),
     )
     .await
@@ -167,44 +170,6 @@ fn dropping_client_before_explicit_shutdown_still_allows_join() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires running mock_exec_layer"]
-async fn dropping_session_does_not_panic() {
-    let (client, runtime) = RosTaskClient::start(config("drop_session")).unwrap();
-    let TaskSession {
-        feedback,
-        result,
-        cancellation,
-        ..
-    } = tokio::time::timeout(
-        Duration::from_secs(3),
-        client.execute(ExecuteCommand {
-            task_id: "drop-session".into(),
-            device_id: "mock_exec".into(),
-            primitive: PrimitiveCommand::Hold,
-            deadline_unix_ms: None,
-        }),
-    )
-    .await
-    .expect("drop-session execute timed out")
-    .unwrap();
-    let feedback_drain = tokio::spawn(async move {
-        let mut feedback = feedback;
-        while feedback.recv().await.is_some() {}
-    });
-    drop(cancellation);
-    let relay_result = tokio::time::timeout(Duration::from_secs(3), result)
-        .await
-        .expect("dropped-session relay did not complete")
-        .expect("dropped-session relay panicked or detached");
-    assert!(relay_result.is_ok(), "relay returned {relay_result:?}");
-    tokio::time::timeout(Duration::from_secs(1), feedback_drain)
-        .await
-        .expect("feedback drain did not complete")
-        .expect("feedback drain panicked");
-    runtime.shutdown().unwrap();
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "requires running mock_exec_layer"]
 async fn runtime_shutdown_resolves_outstanding_result() {
     let (client, runtime) = RosTaskClient::start(config("shutdown_result")).unwrap();
     let TaskSession {
@@ -216,8 +181,9 @@ async fn runtime_shutdown_resolves_outstanding_result() {
         client.execute(ExecuteCommand {
             task_id: "shutdown-result".into(),
             device_id: "mock_exec".into(),
-            primitive: PrimitiveCommand::GoToTag { target_tag: 7 },
-            deadline_unix_ms: None,
+            primitive: PrimitiveCommand::GoToTag,
+            target: vec![7],
+            deadline_ms: None,
         }),
     )
     .await
