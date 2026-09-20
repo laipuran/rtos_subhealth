@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react"
-import { getTask } from "../api/tasks"
+import { getTask, cancelTask } from "../api/tasks"
 import type { TaskRecord } from "../types/task"
 import TaskStatusBadge from "../components/TaskStatusBadge"
 import RouteMap from "../components/RouteMap"
+import { useToast } from "../components/Toast"
 
 interface Props {
   goalId: string | null
@@ -11,8 +12,10 @@ interface Props {
 }
 
 export default function TaskDetail({ goalId, onBack, liveUpdates }: Props) {
+  const { toast } = useToast()
   const [task, setTask] = useState<TaskRecord | null>(null)
   const [loading, setLoading] = useState(true)
+  const [canceling, setCanceling] = useState(false)
 
   useEffect(() => {
     if (!goalId) return
@@ -26,9 +29,23 @@ export default function TaskDetail({ goalId, onBack, liveUpdates }: Props) {
   const merged = goalId && liveUpdates[goalId] ? { ...task, ...liveUpdates[goalId] } : task
   const rec = merged ? { ...merged, state: merged.state || "accepted" } : null
 
+  const handleCancel = async () => {
+    if (!goalId) return
+    setCanceling(true)
+    try {
+      await cancelTask(goalId)
+      toast("Cancel request sent", "success")
+    } catch (err: any) {
+      toast(err.message || "cancel failed", "error")
+    }
+    setCanceling(false)
+  }
+
   if (!goalId) return null
   if (loading) return <p className="text-gray-400 text-sm">Loading...</p>
   if (!rec) return <p className="text-red-500 text-sm">Task not found.</p>
+
+  const isActive = rec.state === "accepted" || rec.state === "running"
 
   return (
     <div className="space-y-4">
@@ -84,6 +101,15 @@ export default function TaskDetail({ goalId, onBack, liveUpdates }: Props) {
         />
       )}
 
+      {isActive && (
+        <button
+          onClick={handleCancel}
+          disabled={canceling}
+          className="bg-red-500 text-white px-4 py-2 rounded text-sm hover:bg-red-600 disabled:opacity-50"
+        >
+          {canceling ? "Canceling..." : "Cancel Task"}
+        </button>
+      )}
     </div>
   )
 }

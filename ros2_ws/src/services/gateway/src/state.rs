@@ -61,7 +61,7 @@ impl AppState {
 
         self.inner.tasks.write().await.insert(id, view.clone());
         self.emit_task_state(&view.task.id, view.state.clone());
-        self.consume_session(session);
+        self.consume_session(view.task.id.clone(), session);
         Ok(view)
     }
 
@@ -84,14 +84,14 @@ impl AppState {
         ))
     }
 
-    fn consume_session(&self, session: ExecutionSession) {
+    fn consume_session(&self, task_id: TaskId, session: ExecutionSession) {
         let state = self.clone();
         tokio::spawn(async move {
-            state.apply_session(session).await;
+            state.apply_session(task_id, session).await;
         });
     }
 
-    async fn apply_session(&self, session: ExecutionSession) {
+    async fn apply_session(&self, task_id: TaskId, session: ExecutionSession) {
         let ExecutionSession {
             mut feedback,
             result,
@@ -100,14 +100,26 @@ impl AppState {
         while let Some(feedback) = feedback.next().await {
             match feedback {
                 Ok(feedback) => self.apply_feedback(feedback).await,
-                Err(error) => tracing::warn!(%error, "execution feedback failed"),
+                Err(error) => {
+                    self.apply_execution_error(&task_id, error).await;
+                    return;
+                }
             }
         }
 
         match result.await {
             Ok(result) => self.apply_result(result).await,
-            Err(error) => tracing::warn!(%error, "execution result failed"),
+            Err(error) => self.apply_execution_error(&task_id, error).await,
         }
+    }
+
+    async fn apply_execution_error(&self, task_id: &TaskId, error: platform::ExecutionError) {
+        tracing::warn!(%error, task_id = %task_id.0, "execution session failed");
+        self.apply_result(ExecutionResult {
+            task_id: task_id.clone(),
+            state: "failed".into(),
+        })
+        .await;
     }
 
     async fn apply_feedback(&self, feedback: ExecutionFeedback) {

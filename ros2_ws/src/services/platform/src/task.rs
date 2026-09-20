@@ -7,12 +7,6 @@ pub enum Primitive {
     GoToTag,
 }
 
-impl Primitive {
-    pub const fn as_str(self) -> &'static str {
-        "go_to_tag"
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskState {

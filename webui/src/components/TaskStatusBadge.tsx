@@ -5,6 +5,7 @@ const colorMap: Record<TaskState, string> = {
   running: "text-blue-600 bg-blue-100",
   succeeded: "text-green-600 bg-green-100",
   failed: "text-red-600 bg-red-100",
+  canceled: "text-gray-500 bg-gray-100",
 }
 
 export default function TaskStatusBadge({ state }: { state: TaskState }) {

@@ -6,6 +6,8 @@ pub enum OrchestrationError {
     Duplicate,
     #[error("task does not exist")]
     UnknownTask,
+    #[error("task target must not be empty")]
+    InvalidTarget,
     #[error("execution port error: {0}")]
     Execution(String),
 }

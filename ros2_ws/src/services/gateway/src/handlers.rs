@@ -57,6 +57,7 @@ pub async fn events(State(state): State<AppState>, ws: WebSocketUpgrade) -> impl
 fn submission_status(error: OrchestrationError) -> StatusCode {
     match error {
         OrchestrationError::Busy | OrchestrationError::Duplicate => StatusCode::CONFLICT,
+        OrchestrationError::InvalidTarget => StatusCode::BAD_REQUEST,
         OrchestrationError::Execution(_) => StatusCode::BAD_GATEWAY,
         OrchestrationError::UnknownTask => StatusCode::INTERNAL_SERVER_ERROR,
     }

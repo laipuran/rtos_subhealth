@@ -47,6 +47,9 @@ impl Orchestrator {
         if self.device_tasks.contains_key(&device_id) {
             return Err(OrchestrationError::Busy);
         }
+        if task.target.is_empty() {
+            return Err(OrchestrationError::InvalidTarget);
+        }
         let session = self
             .execution
             .execute(task.clone())
@@ -95,9 +98,5 @@ impl Orchestrator {
 
     pub fn task(&self, id: &TaskId) -> Option<&ActiveTask> {
         self.active.get(id)
-    }
-
-    pub fn list_tasks(&self) -> Vec<ActiveTask> {
-        self.active.values().cloned().collect()
     }
 }
