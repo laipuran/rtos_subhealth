@@ -1,5 +1,11 @@
 use thiserror::Error;
 
+impl From<RosTaskError> for platform::ExecutionError {
+    fn from(error: RosTaskError) -> Self {
+        Self::Failed(error.to_string())
+    }
+}
+
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum RosTaskError {
     #[error("invalid configuration for {field}: {message}")]

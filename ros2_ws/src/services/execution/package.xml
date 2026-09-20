@@ -6,5 +6,7 @@
   <maintainer email="puranlai@qq.com">Duck Ran</maintainer>
   <license>Apache-2.0</license>
   <depend>platform</depend>
+  <depend>orchestration</depend>
+  <depend>ros_task_client</depend>
   <export><build_type>ament_cargo</build_type></export>
 </package>

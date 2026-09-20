@@ -1,15 +1,19 @@
 use platform::{DeviceId, TaskId};
-use platform::{ExecutionFeedback, ExecutionResult, ExecutionSession};
+use platform::{ExecutionError, ExecutionFeedback, ExecutionResult, ExecutionSession};
 use platform::{Task, TaskState};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::{future::Future, pin::Pin};
 
 use crate::error::OrchestrationError;
 
 mod error;
 
 pub trait ExecutionPort: Send + Sync {
-    fn execute(&self, task: Task) -> Result<ExecutionSession, String>;
+    fn execute(
+        &self,
+        task: Task,
+    ) -> Pin<Box<dyn Future<Output = Result<ExecutionSession, ExecutionError>> + Send + '_>>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,7 +39,7 @@ impl Orchestrator {
         }
     }
 
-    pub fn submit(&mut self, task: Task) -> Result<ExecutionSession, OrchestrationError> {
+    pub async fn submit(&mut self, task: Task) -> Result<ExecutionSession, OrchestrationError> {
         if self.active.contains_key(&task.id) {
             return Err(OrchestrationError::Duplicate);
         }
@@ -46,7 +50,8 @@ impl Orchestrator {
         let session = self
             .execution
             .execute(task.clone())
-            .map_err(OrchestrationError::Execution)?;
+            .await
+            .map_err(|error| OrchestrationError::Execution(error.to_string()))?;
         self.device_tasks.insert(device_id.clone(), task.id.clone());
         self.active.insert(
             task.id.clone(),

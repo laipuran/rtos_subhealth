@@ -8,7 +8,7 @@ pub use domain::{DeviceDescriptor, DeviceId, DeviceState, SensorId, TaskId};
 pub use event::{EventSequence, SystemEvent};
 pub use execution::{
     ExecutionError, ExecutionFeedback, ExecutionFeedbackStream, ExecutionResult,
-    ExecutionResultFuture, ExecutionSession, Executor,
+    ExecutionResultFuture, ExecutionSession,
 };
 pub use sensor::{SensorDescriptor, SensorFilter, SensorProvider, SensorSample, SensorStream};
 pub use task::{Primitive, Task, TaskState};

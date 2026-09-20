@@ -8,5 +8,6 @@
   <depend>rclrs</depend>
   <depend>rosidl_runtime_rs</depend>
   <depend>task_interfaces</depend>
+  <depend>platform</depend>
   <export><build_type>ament_cargo</build_type></export>
 </package>

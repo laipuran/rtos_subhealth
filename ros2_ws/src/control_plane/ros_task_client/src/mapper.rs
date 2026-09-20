@@ -4,14 +4,16 @@ use ros_env::task_interfaces::action::{
 };
 use serde::Serialize;
 
-use crate::{ExecuteCommand, FinalState, PrimitiveCommand, RosTaskError, TaskFeedback, TaskResult};
+use platform::{ExecutionFeedback, ExecutionResult, Primitive, Task, TaskId};
+
+use crate::RosTaskError;
 
 #[derive(Serialize)]
 struct GoToTagPayload<'a> {
     target_tags: &'a [i32],
 }
 
-pub fn to_ros_goal(command: &ExecuteCommand) -> Result<ExecuteTask_Goal, RosTaskError> {
+pub fn to_ros_goal(command: &Task) -> Result<ExecuteTask_Goal, RosTaskError> {
     let deadline_unix_ms = command
         .deadline_ms
         .map(i64::try_from)
@@ -22,15 +24,15 @@ pub fn to_ros_goal(command: &ExecuteCommand) -> Result<ExecuteTask_Goal, RosTask
         })?
         .unwrap_or(0);
     let primitive = match command.primitive {
-        PrimitiveCommand::GoToTag => "go_to_tag",
+        Primitive::GoToTag => "go_to_tag",
     };
     let payload_json = serde_json::to_string(&GoToTagPayload {
         target_tags: &command.target,
     })
     .map_err(|error| mapping_error("target", error.to_string()))?;
     Ok(ExecuteTask_Goal {
-        task_id: command.task_id.clone(),
-        device_id: command.device_id.clone(),
+        task_id: command.id.0.clone(),
+        device_id: command.device_id.0.clone(),
         primitive: primitive.into(),
         payload_json,
         deadline_unix_ms,
@@ -40,7 +42,7 @@ pub fn to_ros_goal(command: &ExecuteCommand) -> Result<ExecuteTask_Goal, RosTask
 pub fn from_ros_feedback(
     expected_task_id: &str,
     raw: ExecuteTask_Feedback,
-) -> Result<TaskFeedback, RosTaskError> {
+) -> Result<ExecutionFeedback, RosTaskError> {
     validate_task_id(expected_task_id, &raw.task_id)?;
     if !raw.progress.is_finite() || !(0.0..=1.0).contains(&raw.progress) {
         return Err(mapping_error(
@@ -48,8 +50,8 @@ pub fn from_ros_feedback(
             "must be finite and in [0.0, 1.0]",
         ));
     }
-    Ok(TaskFeedback {
-        task_id: raw.task_id,
+    Ok(ExecutionFeedback {
+        task_id: TaskId(raw.task_id),
         progress: raw.progress,
         phase: raw.phase,
     })
@@ -59,11 +61,11 @@ pub fn from_ros_result(
     expected_task_id: &str,
     status: GoalStatusCode,
     raw: ExecuteTask_Result,
-) -> Result<TaskResult, RosTaskError> {
+) -> Result<ExecutionResult, RosTaskError> {
     validate_task_id(expected_task_id, &raw.task_id)?;
-    let final_state = match (status, raw.final_state.as_str()) {
-        (GoalStatusCode::Succeeded, "succeeded") => FinalState::Succeeded,
-        (GoalStatusCode::Aborted, "failed") => FinalState::Failed,
+    let state = match (status, raw.final_state.as_str()) {
+        (GoalStatusCode::Succeeded, "succeeded") => "succeeded",
+        (GoalStatusCode::Aborted, "failed") => "failed",
         (status, state) => {
             return Err(mapping_error(
                 "final_state",
@@ -71,9 +73,9 @@ pub fn from_ros_result(
             ))
         }
     };
-    Ok(TaskResult {
-        task_id: raw.task_id,
-        final_state,
+    Ok(ExecutionResult {
+        task_id: TaskId(raw.task_id),
+        state: state.into(),
     })
 }
 

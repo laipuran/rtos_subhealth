@@ -4,10 +4,9 @@ use std::{
     time::Duration,
 };
 
-use ros_task_client::{
-    ExecEndpointConfig, ExecuteCommand, PrimitiveCommand, RosConnectionConfig, RosTaskClient,
-    RosTaskError, TaskSession,
-};
+use platform::{DeviceId, ExecutionError, ExecutionSession, Primitive, Task, TaskId};
+use ros_task_client::{ExecEndpointConfig, RosConnectionConfig, RosTaskClient, RosTaskError};
+use tokio_stream::StreamExt;
 
 fn config(test_name: &str) -> RosConnectionConfig {
     RosConnectionConfig {
@@ -90,10 +89,10 @@ async fn unknown_device_returns_without_waiting_for_action_graph() {
     let (client, runtime) = RosTaskClient::start(config("unknown_device")).unwrap();
     let outcome = tokio::time::timeout(
         Duration::from_millis(50),
-        client.execute(ExecuteCommand {
-            task_id: "unknown-device".into(),
-            device_id: "not_configured".into(),
-            primitive: PrimitiveCommand::GoToTag,
+        client.execute(Task {
+            id: TaskId("unknown-device".into()),
+            device_id: DeviceId("not_configured".into()),
+            primitive: Primitive::GoToTag,
             target: vec![7],
             deadline_ms: None,
         }),
@@ -103,7 +102,7 @@ async fn unknown_device_returns_without_waiting_for_action_graph() {
 
     assert!(matches!(
         outcome,
-        Err(RosTaskError::UnknownDevice { device_id }) if device_id == "not_configured"
+        Err(ExecutionError::Failed(message)) if message == "unknown device: not_configured"
     ));
     runtime.shutdown().unwrap();
 }
@@ -119,10 +118,10 @@ async fn absent_action_server_returns_after_configured_timeout() {
     let upper_bound = missing.server_wait_timeout + Duration::from_secs(1);
     let outcome = tokio::time::timeout(
         upper_bound,
-        client.execute(ExecuteCommand {
-            task_id: "absent-server".into(),
-            device_id: "mock_exec".into(),
-            primitive: PrimitiveCommand::GoToTag,
+        client.execute(Task {
+            id: TaskId("absent-server".into()),
+            device_id: DeviceId("mock_exec".into()),
+            primitive: Primitive::GoToTag,
             target: vec![7],
             deadline_ms: None,
         }),
@@ -134,8 +133,8 @@ async fn absent_action_server_returns_after_configured_timeout() {
     assert!(started.elapsed() < upper_bound);
     assert!(matches!(
         outcome,
-        Err(RosTaskError::ActionServerUnavailable { device_id, action_name })
-            if device_id == "mock_exec" && action_name == "/missing/execute_task"
+        Err(ExecutionError::Failed(message))
+            if message == "action server unavailable for device mock_exec at /missing/execute_task"
     ));
     runtime.shutdown().unwrap();
 }
@@ -147,10 +146,10 @@ async fn execute_after_shutdown_returns_shutdown() {
 
     let outcome = tokio::time::timeout(
         Duration::from_secs(1),
-        client.execute(ExecuteCommand {
-            task_id: "after-shutdown".into(),
-            device_id: "mock_exec".into(),
-            primitive: PrimitiveCommand::GoToTag,
+        client.execute(Task {
+            id: TaskId("after-shutdown".into()),
+            device_id: DeviceId("mock_exec".into()),
+            primitive: Primitive::GoToTag,
             target: vec![7],
             deadline_ms: None,
         }),
@@ -158,7 +157,9 @@ async fn execute_after_shutdown_returns_shutdown() {
     .await
     .expect("execute after shutdown did not return");
 
-    assert!(matches!(outcome, Err(RosTaskError::Shutdown)));
+    assert!(
+        matches!(outcome, Err(ExecutionError::Failed(message)) if message == "ROS task client is shutting down")
+    );
 }
 
 #[test]
@@ -172,16 +173,16 @@ fn dropping_client_before_explicit_shutdown_still_allows_join() {
 #[ignore = "requires running mock_exec_layer"]
 async fn runtime_shutdown_resolves_outstanding_result() {
     let (client, runtime) = RosTaskClient::start(config("shutdown_result")).unwrap();
-    let TaskSession {
+    let ExecutionSession {
         mut feedback,
         result,
         ..
     } = tokio::time::timeout(
         Duration::from_secs(3),
-        client.execute(ExecuteCommand {
-            task_id: "shutdown-result".into(),
-            device_id: "mock_exec".into(),
-            primitive: PrimitiveCommand::GoToTag,
+        client.execute(Task {
+            id: TaskId("shutdown-result".into()),
+            device_id: DeviceId("mock_exec".into()),
+            primitive: Primitive::GoToTag,
             target: vec![7],
             deadline_ms: None,
         }),
@@ -190,7 +191,7 @@ async fn runtime_shutdown_resolves_outstanding_result() {
     .expect("shutdown-result execute timed out")
     .unwrap();
 
-    tokio::time::timeout(Duration::from_secs(3), feedback.recv())
+    tokio::time::timeout(Duration::from_secs(3), feedback.next())
         .await
         .expect("shutdown-result feedback timed out")
         .unwrap()
@@ -199,8 +200,9 @@ async fn runtime_shutdown_resolves_outstanding_result() {
     assert_eq!(
         tokio::time::timeout(Duration::from_secs(3), result)
             .await
-            .expect("shutdown-result result timed out")
-            .unwrap(),
-        Err(RosTaskError::Shutdown)
+            .expect("shutdown-result result timed out"),
+        Err(ExecutionError::Failed(
+            "ROS task client is shutting down".into()
+        ))
     );
 }

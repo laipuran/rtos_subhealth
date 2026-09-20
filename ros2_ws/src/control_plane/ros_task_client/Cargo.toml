@@ -5,9 +5,9 @@ edition = "2021"
 rust-version = "1.85"
 license = "Apache-2.0"
 
-[workspace]
-
 [dependencies]
+platform = { path = "../../services/platform", version = "0.1.0" }
+tokio-stream = "0.1"
 rclrs = "0.7"
 # ros-env 0.2.1 selects rosidl_runtime_rs 0.7, while rclrs 0.7 uses 0.6.
 ros-env = "=0.2.0"

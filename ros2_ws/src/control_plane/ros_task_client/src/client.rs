@@ -8,17 +8,18 @@ use std::{
     time::Duration,
 };
 
+use platform::{ExecutionError, ExecutionFeedback, ExecutionResult, ExecutionSession, Task};
 use rclrs::{ActionClient, CreateBasicExecutor, GoalClient, Node, TopicNamesAndTypes};
 use ros_env::task_interfaces::action::{ExecuteTask, ExecuteTask_Feedback};
 use tokio::{
     sync::{mpsc, oneshot, watch},
     time::Instant,
 };
+use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
     mapper::{from_ros_feedback, from_ros_result, to_ros_goal},
-    ExecuteCommand, RosConnectionConfig, RosTaskError, RosTaskRuntime, TaskFeedback, TaskResult,
-    TaskSession,
+    RosConnectionConfig, RosTaskError, RosTaskRuntime,
 };
 
 struct Endpoint {
@@ -82,31 +83,49 @@ impl RosTaskClient {
         ))
     }
 
-    pub async fn execute(&self, command: ExecuteCommand) -> Result<TaskSession, RosTaskError> {
+    pub async fn execute(&self, task: Task) -> Result<ExecutionSession, ExecutionError> {
+        let goal = self.request_goal(&task).await?;
+        let (feedback_tx, feedback_rx) = mpsc::channel(self.state.feedback_buffer);
+        let (result_tx, result_rx) = oneshot::channel();
+        let shutdown_rx = self.state.shutdown_rx.clone();
+        tokio::spawn(async move {
+            let result = relay_goal(goal, &task.id.0, feedback_tx, shutdown_rx).await;
+            let _ = result_tx.send(result);
+        });
+        Ok(ExecutionSession {
+            feedback: Box::pin(ReceiverStream::new(feedback_rx)),
+            result: Box::pin(async move {
+                result_rx
+                    .await
+                    .map_err(|_| RosTaskError::ChannelClosed { channel: "result" })?
+                    .map_err(ExecutionError::from)
+            }),
+        })
+    }
+
+    async fn request_goal(&self, command: &Task) -> Result<GoalClient<ExecuteTask>, RosTaskError> {
         let state = &self.state;
         if state.stopping.load(Ordering::Acquire) || *state.shutdown_rx.borrow() {
             return Err(RosTaskError::Shutdown);
         }
-        let endpoint =
-            state
-                .endpoints
-                .get(&command.device_id)
-                .ok_or_else(|| RosTaskError::UnknownDevice {
-                    device_id: command.device_id.clone(),
-                })?;
-        let raw_goal = to_ros_goal(&command)?;
+        let endpoint = state.endpoints.get(&command.device_id.0).ok_or_else(|| {
+            RosTaskError::UnknownDevice {
+                device_id: command.device_id.0.clone(),
+            }
+        })?;
+        let raw_goal = to_ros_goal(command)?;
         let deadline = Instant::now() + state.server_wait_timeout;
         let mut shutdown_rx = state.shutdown_rx.clone();
         wait_for_server(
             &state.node,
             endpoint,
-            &command.device_id,
+            &command.device_id.0,
             deadline,
             &mut shutdown_rx,
         )
         .await?;
         if Instant::now() >= deadline {
-            return Err(unavailable(endpoint, &command.device_id));
+            return Err(unavailable(endpoint, &command.device_id.0));
         }
         let requested_goal = endpoint
             .action_client
@@ -116,24 +135,11 @@ impl RosTaskClient {
             biased;
             _ = shutdown_rx.changed() => return Err(RosTaskError::Shutdown),
             accepted = tokio::time::timeout_at(deadline, requested_goal) => {
-                accepted.map_err(|_| unavailable(endpoint, &command.device_id))?
+                accepted.map_err(|_| unavailable(endpoint, &command.device_id.0))?
             }
         };
-        let goal = accepted.ok_or_else(|| RosTaskError::GoalRejected {
-            task_id: command.task_id.clone(),
-        })?;
-        let (feedback_tx, feedback_rx) = mpsc::channel(state.feedback_buffer);
-        let (result_tx, result_rx) = oneshot::channel();
-        let task_id = command.task_id;
-        let relay_task_id = task_id.clone();
-        tokio::spawn(async move {
-            let result = relay_goal(goal, &relay_task_id, feedback_tx, shutdown_rx).await;
-            let _ = result_tx.send(result);
-        });
-        Ok(TaskSession {
-            task_id,
-            feedback: feedback_rx,
-            result: result_rx,
+        accepted.ok_or_else(|| RosTaskError::GoalRejected {
+            task_id: command.id.0.clone(),
         })
     }
 }
@@ -167,9 +173,9 @@ async fn wait_for_server(
 async fn relay_goal(
     goal: GoalClient<ExecuteTask>,
     task_id: &str,
-    feedback_tx: mpsc::Sender<Result<TaskFeedback, RosTaskError>>,
+    feedback_tx: mpsc::Sender<Result<ExecutionFeedback, ExecutionError>>,
     mut shutdown_rx: watch::Receiver<bool>,
-) -> Result<TaskResult, RosTaskError> {
+) -> Result<ExecutionResult, RosTaskError> {
     let GoalClient {
         mut feedback,
         result,
@@ -200,7 +206,7 @@ async fn relay_goal(
 
 fn drain_ready_feedback(
     feedback: &mut mpsc::UnboundedReceiver<ExecuteTask_Feedback>,
-    feedback_tx: &mpsc::Sender<Result<TaskFeedback, RosTaskError>>,
+    feedback_tx: &mpsc::Sender<Result<ExecutionFeedback, ExecutionError>>,
     task_id: &str,
 ) -> Result<(), RosTaskError> {
     for _ in 0..READY_FEEDBACK_DRAIN_LIMIT {
@@ -211,7 +217,7 @@ fn drain_ready_feedback(
 }
 
 fn map_and_try_send_feedback(
-    feedback_tx: &mpsc::Sender<Result<TaskFeedback, RosTaskError>>,
+    feedback_tx: &mpsc::Sender<Result<ExecutionFeedback, ExecutionError>>,
     task_id: &str,
     raw: ExecuteTask_Feedback,
 ) -> Result<(), RosTaskError> {

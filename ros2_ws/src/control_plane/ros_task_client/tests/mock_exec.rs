@@ -1,9 +1,7 @@
 use std::{future::Future, time::Duration};
 
-use ros_task_client::{
-    ExecEndpointConfig, ExecuteCommand, PrimitiveCommand, RosConnectionConfig, RosTaskClient,
-    RosTaskError, TaskSession,
-};
+use platform::{DeviceId, ExecutionError, ExecutionSession, Primitive, Task, TaskId};
+use ros_task_client::{ExecEndpointConfig, RosConnectionConfig, RosTaskClient};
 
 fn config(test_name: &str, feedback_buffer: usize) -> RosConnectionConfig {
     RosConnectionConfig {
@@ -28,29 +26,26 @@ async fn within<T>(future: impl Future<Output = T>) -> T {
 async fn go_to_tag_reports_overflow_when_feedback_is_not_drained() {
     let (client, runtime) = RosTaskClient::start(config("go_to_tag_overflow", 1)).unwrap();
 
-    let session = within(client.execute(ExecuteCommand {
-        task_id: "rust-go-to-tag".into(),
-        device_id: "mock_exec".into(),
-        primitive: PrimitiveCommand::GoToTag,
+    let session = within(client.execute(Task {
+        id: TaskId("rust-go-to-tag".into()),
+        device_id: DeviceId("mock_exec".into()),
+        primitive: Primitive::GoToTag,
         target: vec![7],
         deadline_ms: None,
     }))
     .await
     .unwrap();
-    let TaskSession {
+    let ExecutionSession {
         feedback, result, ..
     } = session;
 
     let outcome = tokio::time::timeout(Duration::from_secs(2), result)
         .await
-        .expect("overflow result timed out")
-        .unwrap();
+        .expect("overflow result timed out");
     assert!(matches!(
         outcome,
-        Err(RosTaskError::FeedbackOverflow {
-            task_id,
-            capacity: 1,
-        }) if task_id == "rust-go-to-tag"
+        Err(ExecutionError::Failed(message))
+            if message == "feedback overflow for task rust-go-to-tag: channel capacity is 1"
     ));
     drop(feedback);
     runtime.shutdown().unwrap();

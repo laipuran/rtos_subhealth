@@ -1,5 +1,4 @@
-use crate::domain::{DeviceDescriptor, DeviceState, TaskId};
-use crate::task::Task;
+use crate::domain::TaskId;
 use futures_core::Stream;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
@@ -30,14 +29,6 @@ pub struct ExecutionSession {
 
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
 pub enum ExecutionError {
-    #[error("execution is busy")]
-    Busy,
     #[error("execution failed: {0}")]
     Failed(String),
-}
-
-pub trait Executor: Send + Sync {
-    fn descriptor(&self) -> DeviceDescriptor;
-    fn execute(&self, task: Task) -> Result<(), ExecutionError>;
-    fn state(&self) -> DeviceState;
 }
