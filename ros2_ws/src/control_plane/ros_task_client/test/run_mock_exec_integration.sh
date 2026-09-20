@@ -48,7 +48,7 @@ if [[ ! -x "${mock_executable}" ]]; then
 fi
 
 setsid "${mock_executable}" \
-  --ros-args -p step_delay_s:=0.05 -p fail_target_tag:=42 \
+  --ros-args -p step_delay_s:=0.05 \
   >"${log_file}" 2>&1 &
 mock_pid=$!
 mock_pgid=$(ps -o pgid= -p "${mock_pid}" | tr -d '[:space:]')

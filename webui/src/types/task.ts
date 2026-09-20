@@ -1,24 +1,15 @@
-export type TaskType = "go_to_tag" | "patrol_route" | "hold"
+export type TaskType = "go_to_tag"
 
 export type TaskState =
   | "accepted"
   | "running"
   | "succeeded"
   | "failed"
-  | "canceled"
 
-export interface Constraints {
-  max_speed_mps?: number
-  min_clearance_m?: number
-  avoid_tags?: number[]
-}
 
 export interface TaskGoal {
   type: TaskType
-  priority?: number
-  route_id?: string
   target_tags?: number[]
-  constraints?: Constraints
   deadline_ms?: number
 }
 

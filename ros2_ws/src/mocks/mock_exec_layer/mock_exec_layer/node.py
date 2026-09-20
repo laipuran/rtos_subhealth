@@ -4,7 +4,7 @@ import json
 import time
 
 import rclpy
-from rclpy.action import ActionServer, CancelResponse, GoalResponse
+from rclpy.action import ActionServer, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -16,11 +16,9 @@ from .contract import (
     UnsupportedPrimitive,
 )
 from .execution import (
-    canceled_feedback,
     execution_steps,
     validate_step_delay,
 )
-from .terminal_state import GoalTerminalCoordinator
 
 
 class MockExecLayerNode(Node):
@@ -31,22 +29,18 @@ class MockExecLayerNode(Node):
         self.declare_parameter('action_name', '/mock_exec/execute_task')
         self.declare_parameter('device_id', 'mock_exec')
         self.declare_parameter('step_delay_s', 1.0)
-        self.declare_parameter('fail_target_tag', 2**31)
 
         action_name = self.get_parameter('action_name').value
         self._device_id = str(self.get_parameter('device_id').value)
         self._step_delay_s = validate_step_delay(
             float(self.get_parameter('step_delay_s').value)
         )
-        self._fail_target_tag = int(self.get_parameter('fail_target_tag').value)
-        self._terminal_states = GoalTerminalCoordinator()
         self._action_server = ActionServer(
             self,
             ExecuteTask,
             action_name,
             execute_callback=self.execute_callback,
             goal_callback=self.goal_callback,
-            cancel_callback=self.cancel_callback,
             callback_group=ReentrantCallbackGroup(),
         )
 
@@ -61,73 +55,33 @@ class MockExecLayerNode(Node):
             return GoalResponse.REJECT
         return GoalResponse.ACCEPT
 
-    def cancel_callback(self, goal_handle) -> CancelResponse:
-        if self._terminal_states.request_cancel(goal_handle):
-            return CancelResponse.ACCEPT
-        return CancelResponse.REJECT
-
     def execute_callback(self, goal_handle) -> ExecuteTask.Result:
         request = goal_handle.request
         try:
             payload = parse_payload(request.primitive, request.payload_json)
             steps = execution_steps(request.primitive, payload)
         except InvalidPayload as error:
-            return self._abort_or_cancel(
-                goal_handle, None, 'INVALID_PAYLOAD', str(error)
-            )
+            goal_handle.abort()
+            return self._result(goal_handle, 'failed', 'INVALID_PAYLOAD', str(error))
         except UnsupportedPrimitive as error:
-            return self._abort_or_cancel(
-                goal_handle, None, 'UNSUPPORTED_PRIMITIVE', str(error)
+            goal_handle.abort()
+            return self._result(
+                goal_handle, 'failed', 'UNSUPPORTED_PRIMITIVE', str(error)
             )
 
-        last_step = None
         for step in steps:
             if self._step_delay_s > 0.0:
                 time.sleep(self._step_delay_s)
-            if self._terminal_states.is_cancel_pending(goal_handle):
-                return self._cancel(goal_handle, last_step)
             if self._deadline_expired(request.deadline_unix_ms):
-                return self._abort_or_cancel(
-                    goal_handle,
-                    last_step,
-                    'DEADLINE_EXCEEDED',
-                    'Task deadline elapsed',
+                goal_handle.abort()
+                return self._result(
+                    goal_handle, 'failed', 'DEADLINE_EXCEEDED', 'Task deadline elapsed'
                 )
 
             self._publish_feedback(goal_handle, 'running', step)
-            last_step = step
 
-            if (
-                request.primitive == 'go_to_tag'
-                and payload['target_tag'] == self._fail_target_tag
-            ):
-                return self._abort_or_cancel(
-                    goal_handle, last_step, 'SDK_ERROR', 'Configured mock failure'
-                )
-
-        if self._terminal_states.commit_success(goal_handle):
-            goal_handle.succeed()
-            return self._result(goal_handle, 'succeeded', '', 'Task completed')
-        return self._cancel(goal_handle, last_step)
-
-    def _cancel(self, goal_handle, last_step) -> ExecuteTask.Result:
-        while not goal_handle.is_cancel_requested:
-            time.sleep(0.001)
-        if not self._terminal_states.commit_canceled(goal_handle):
-            raise RuntimeError('cancellation was not accepted for this goal')
-        self._publish_feedback(
-            goal_handle, 'canceled', canceled_feedback(last_step)
-        )
-        goal_handle.canceled()
-        return self._result(goal_handle, 'canceled', '', 'Task canceled')
-
-    def _abort_or_cancel(
-        self, goal_handle, last_step, error_code: str, message: str
-    ) -> ExecuteTask.Result:
-        if self._terminal_states.commit_abort(goal_handle):
-            goal_handle.abort()
-            return self._result(goal_handle, 'failed', error_code, message)
-        return self._cancel(goal_handle, last_step)
+        goal_handle.succeed()
+        return self._result(goal_handle, 'succeeded', '', 'Task completed')
 
     def _publish_feedback(self, goal_handle, state: str, step) -> None:
         feedback = ExecuteTask.Feedback()

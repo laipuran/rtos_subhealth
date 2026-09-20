@@ -19,7 +19,7 @@
 ## P0：架构主链
 
 - [ ] 将 Gateway 的 canonical task 接入真实 Orchestration application port。
-- [ ] 将 Orchestration 接入真实 Execution port，并传播 feedback/result/cancel。
+- [ ] 将 Orchestration 接入真实 Execution port，并传播 feedback/result。
 - [ ] 将 Sensor registry 接入独立 provider 生命周期，使 Orchestration 和
   Execution 共享同一数据源。
 - [ ] 为 server 建立正式 composition root，启动 Gateway、Orchestration、

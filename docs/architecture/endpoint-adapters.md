@@ -1,7 +1,7 @@
 # Endpoint Adapter
 
 Endpoint adapter 是设备相关代码的唯一入口。它实现 `BackendSdk`，向
-`endpoint-runtime` 提供 descriptor、state、execute、cancel 和 stop。
+`endpoint-runtime` 提供 descriptor、state 和 execute。
 
 新增设备时只允许新增：
 

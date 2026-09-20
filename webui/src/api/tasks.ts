@@ -30,8 +30,3 @@ export async function getTask(goalId: string): Promise<TaskRecord> {
   if (!res.ok) throw await parseError(res)
   return res.json()
 }
-
-export async function cancelTask(goalId: string): Promise<void> {
-  const res = await fetch(`${BASE}/tasks/${goalId}/cancel`, { method: "POST" })
-  if (!res.ok) throw await parseError(res)
-}

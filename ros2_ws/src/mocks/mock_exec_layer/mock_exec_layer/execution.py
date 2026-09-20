@@ -1,4 +1,4 @@
-"""Pure deterministic execution behavior for supported primitives."""
+"""Pure deterministic execution behavior for GoToTag routes."""
 
 from dataclasses import dataclass
 
@@ -14,36 +14,26 @@ class ExecutionStep:
 
 def execution_steps(primitive: str, payload: dict) -> tuple[ExecutionStep, ...]:
     """Build deterministic feedback steps for one validated task payload."""
-    if primitive == 'hold':
-        return (ExecutionStep(progress=1.0, phase='holding', details={}),)
-
     if primitive == 'go_to_tag':
-        target_tag = payload['target_tag']
+        target_tags = payload['target_tags']
+        route_length = len(target_tags)
         return tuple(
             ExecutionStep(
-                progress=index / 3,
+                progress=(index + 1) / route_length,
                 phase='moving_to_tag',
                 details={
-                    'current_tag': target_tag if index == 3 else -1,
-                    'next_tag': -1 if index == 3 else target_tag,
+                    'current_tag': target_tags[index],
+                    'next_tag': (
+                        target_tags[index + 1]
+                        if index + 1 < route_length
+                        else -1
+                    ),
                 },
             )
-            for index in range(1, 4)
+            for index in range(route_length)
         )
 
     raise UnsupportedPrimitive(primitive)
-
-
-def canceled_feedback(last_step: ExecutionStep | None) -> ExecutionStep:
-    """Build terminal cancellation feedback from the last completed step."""
-    details = dict(last_step.details) if last_step is not None else {}
-    if 'next_tag' in details:
-        details['next_tag'] = -1
-    return ExecutionStep(
-        progress=last_step.progress if last_step is not None else 0.0,
-        phase='canceled',
-        details=details,
-    )
 
 
 def validate_step_delay(value: float) -> float:

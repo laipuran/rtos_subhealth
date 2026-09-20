@@ -1,4 +1,4 @@
-"""Primitive payload validation for the mock execution layer."""
+"""Task payload validation for the mock execution layer."""
 
 import json
 
@@ -21,19 +21,19 @@ def parse_payload(primitive: str, payload_json: str) -> dict:
     if not isinstance(payload, dict):
         raise InvalidPayload('payload must be a JSON object')
 
-    if primitive == 'hold':
-        if payload:
-            raise InvalidPayload('hold payload must be empty')
-        return payload
-
     if primitive == 'go_to_tag':
-        if set(payload) != {'target_tag'}:
-            raise InvalidPayload('go_to_tag payload requires only target_tag')
-        target_tag = payload['target_tag']
-        if isinstance(target_tag, bool) or not isinstance(target_tag, int):
-            raise InvalidPayload('target_tag must be an integer')
-        if target_tag < -(2**31) or target_tag > 2**31 - 1:
-            raise InvalidPayload('target_tag must fit in a signed 32-bit integer')
+        if set(payload) != {'target_tags'}:
+            raise InvalidPayload('go_to_tag payload requires only target_tags')
+        target_tags = payload['target_tags']
+        if not isinstance(target_tags, list) or not target_tags:
+            raise InvalidPayload('target_tags must be a non-empty array')
+        for target_tag in target_tags:
+            if isinstance(target_tag, bool) or not isinstance(target_tag, int):
+                raise InvalidPayload('target_tags must contain only integers')
+            if target_tag < -(2**31) or target_tag > 2**31 - 1:
+                raise InvalidPayload(
+                    'target_tags values must fit in a signed 32-bit integer'
+                )
         return payload
 
     raise UnsupportedPrimitive(primitive)

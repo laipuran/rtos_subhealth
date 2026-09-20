@@ -17,7 +17,6 @@ setup(
     maintainer_email='puranlai@qq.com',
     description='Deterministic mock execution action server.',
     license='Apache-2.0',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'mock_exec_layer_node = mock_exec_layer.node:main',
