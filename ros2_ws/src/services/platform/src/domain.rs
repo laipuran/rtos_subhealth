@@ -13,8 +13,6 @@ pub struct SensorId(pub String);
 pub struct DeviceDescriptor {
     pub id: DeviceId,
     pub name: String,
-    pub capabilities: Vec<String>,
-    pub primitives: Vec<String>,
     pub sensors: Vec<SensorId>,
 }
 

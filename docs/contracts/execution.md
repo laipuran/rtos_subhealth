@@ -2,30 +2,18 @@
 
 当前 `ros2_ws/src/services/platform/src/execution.rs` 定义：
 
-- `ExecutionCommand { task_id: TaskId, primitive: String, payload:
-  serde_json::Value, deadline_ms: Option<u64> }`；
 - `ExecutionFeedback { task_id: TaskId, progress: f32, phase: String }`；
-- `ExecutionResult { task_id: TaskId, state: String, error_code:
-  Option<String>, message: String }`；
-- `ExecutionError::UnsupportedCommand(String)`、`ExecutionError::Busy`、
-  `ExecutionError::Failed(String)`；
-- `type ExecutionHandle = Arc<dyn ExecutionHandlePort>`。
+- `ExecutionResult { task_id: TaskId, state: String }`；
+- `ExecutionError::Busy`、`ExecutionError::Failed(String)`。
 
-Port 签名为：
+执行边界直接消费 canonical `Task`，不创建第二套 command/payload 参数契约：
 
 ```rust
 pub trait Executor: Send + Sync {
     fn descriptor(&self) -> DeviceDescriptor;
-    fn execute(&self, command: ExecutionCommand) -> Result<ExecutionHandle, ExecutionError>;
-    fn cancel(&self, task_id: &TaskId) -> Result<(), ExecutionError>;
+    fn execute(&self, task: Task) -> Result<(), ExecutionError>;
     fn state(&self) -> DeviceState;
-}
-
-pub trait ExecutionHandlePort: Send + Sync {
-    fn result(&self) -> Option<ExecutionResult>;
 }
 ```
 
-具体设备只能通过 Endpoint Adapter 实现 `Executor`，控制平面不得导入其 SDK。
-[ROS 2 RFC mock action](../guide/ros-mocks.md) 不是该 port 的 mapper；两套字段
-之间仍需后续显式映射。
+首版执行契约不支持取消。反馈用于更新任务进度和阶段，结果仅暴露任务的终态。
