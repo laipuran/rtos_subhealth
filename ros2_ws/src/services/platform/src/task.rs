@@ -24,3 +24,11 @@ pub struct Task {
     pub target: Vec<i32>,
     pub deadline_ms: Option<u64>,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskRecord {
+    pub task: Task,
+    pub state: TaskState,
+    pub progress: f32,
+    pub phase: String,
+}
