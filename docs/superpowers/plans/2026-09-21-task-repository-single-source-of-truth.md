@@ -152,6 +152,11 @@ apply terminal execution result
 
 **Verification:** Run Gateway and workspace non-test checks; manually verify create/list/get and terminal task state use the same repository record.
 
+#### Task 4 review-fix report
+
+- Completed the `OrchestrationError` HTTP mapping for the upstream `TerminalTask` and `Repository` variants: terminal-task conflicts return `409 CONFLICT`, and repository failures return `500 INTERNAL_SERVER_ERROR`, matching the existing handler categories.
+- Verification: `cargo fmt --all -- --check` and `git diff --check` passed. The focused `cargo check -p gateway` is blocked by the host's missing `/opt/ros/jazzy/share/action_msgs/rust/Cargo.toml`; an isolated workspace check without the repository Cargo config reaches ROS build dependencies but is blocked because `AMENT_PREFIX_PATH` is not set.
+
 ---
 
 ### Task 5: Recompose the runtime around one repository instance
