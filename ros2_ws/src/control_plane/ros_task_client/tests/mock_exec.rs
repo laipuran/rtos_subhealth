@@ -28,7 +28,8 @@ async fn within<T>(future: impl Future<Output = T>) -> T {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires running mock_exec_layer"]
 async fn go_to_tag_reports_overflow_when_feedback_is_not_drained() {
-    let (client, runtime) = RosTaskClient::start(config("go_to_tag_overflow", 1)).unwrap();
+    let (client, runtime) =
+        RosTaskClient::init_with_config(config("go_to_tag_overflow", 1)).unwrap();
 
     let session = within(client.execute(Task {
         id: TaskId("rust-go-to-tag".into()),

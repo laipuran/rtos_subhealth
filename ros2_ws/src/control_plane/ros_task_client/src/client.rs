@@ -83,6 +83,13 @@ pub struct RosTaskClient {
 impl RosTaskClient {
     pub fn init() -> Result<(Self, RosTaskRuntime), RosTaskError> {
         let config = RosTaskClientConfig::from_environment()?;
+        Self::init_with_config(config)
+    }
+
+    pub fn init_with_config(
+        config: RosTaskClientConfig,
+    ) -> Result<(Self, RosTaskRuntime), RosTaskError> {
+        config.validate()?;
         let context = rclrs::Context::default_from_env().map_err(ros_error)?;
         let executor = context.create_basic_executor();
         let node = executor

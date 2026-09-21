@@ -28,7 +28,7 @@ fn config(test_name: &str) -> RosTaskClientConfig {
 
 #[test]
 fn immediate_shutdown_is_bounded_and_idempotent() {
-    let (_client, runtime) = RosTaskClient::start(config("lifecycle")).unwrap();
+    let (_client, runtime) = RosTaskClient::init_with_config(config("lifecycle")).unwrap();
     let (done_tx, done_rx) = mpsc::channel();
 
     let shutdown_thread = thread::spawn(move || {
@@ -47,7 +47,7 @@ fn immediate_shutdown_is_bounded_and_idempotent() {
 
 #[test]
 fn concurrent_shutdown_calls_are_bounded() {
-    let (_client, runtime) = RosTaskClient::start(config("concurrent")).unwrap();
+    let (_client, runtime) = RosTaskClient::init_with_config(config("concurrent")).unwrap();
     let runtime = Arc::new(runtime);
     let barrier = Arc::new(Barrier::new(5));
     let (done_tx, done_rx) = mpsc::channel();
@@ -77,12 +77,12 @@ fn concurrent_shutdown_calls_are_bounded() {
 }
 
 #[test]
-fn start_rejects_invalid_config_before_starting_executor() {
+fn init_with_config_rejects_invalid_config_before_starting_executor() {
     let mut config = config("invalid");
     config.ros.feedback_buffer = 0;
 
     assert!(matches!(
-        RosTaskClient::start(config),
+        RosTaskClient::init_with_config(config),
         Err(RosTaskError::InvalidConfig {
             field: "feedback_buffer",
             ..
@@ -92,7 +92,7 @@ fn start_rejects_invalid_config_before_starting_executor() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn unknown_device_returns_without_waiting_for_action_graph() {
-    let (client, runtime) = RosTaskClient::start(config("unknown_device")).unwrap();
+    let (client, runtime) = RosTaskClient::init_with_config(config("unknown_device")).unwrap();
     let outcome = tokio::time::timeout(
         Duration::from_millis(50),
         client.execute(Task {
@@ -118,7 +118,7 @@ async fn absent_action_server_returns_after_configured_timeout() {
     let mut missing = config("absent_server");
     missing.devices[0].action_name = "/missing/execute_task".into();
     missing.ros.server_wait_timeout_ms = 100;
-    let (client, runtime) = RosTaskClient::start(missing.clone()).unwrap();
+    let (client, runtime) = RosTaskClient::init_with_config(missing.clone()).unwrap();
     let started = std::time::Instant::now();
 
     let server_wait_timeout = Duration::from_millis(missing.ros.server_wait_timeout_ms);
@@ -148,7 +148,8 @@ async fn absent_action_server_returns_after_configured_timeout() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn execute_after_shutdown_returns_shutdown() {
-    let (client, runtime) = RosTaskClient::start(config("execute_after_shutdown")).unwrap();
+    let (client, runtime) =
+        RosTaskClient::init_with_config(config("execute_after_shutdown")).unwrap();
     runtime.shutdown().unwrap();
 
     let outcome = tokio::time::timeout(
@@ -171,7 +172,7 @@ async fn execute_after_shutdown_returns_shutdown() {
 
 #[test]
 fn dropping_client_before_explicit_shutdown_still_allows_join() {
-    let (client, runtime) = RosTaskClient::start(config("drop_client")).unwrap();
+    let (client, runtime) = RosTaskClient::init_with_config(config("drop_client")).unwrap();
     drop(client);
     runtime.shutdown().unwrap();
 }
@@ -179,7 +180,7 @@ fn dropping_client_before_explicit_shutdown_still_allows_join() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires running mock_exec_layer"]
 async fn runtime_shutdown_resolves_outstanding_result() {
-    let (client, runtime) = RosTaskClient::start(config("shutdown_result")).unwrap();
+    let (client, runtime) = RosTaskClient::init_with_config(config("shutdown_result")).unwrap();
     let ExecutionSession {
         mut feedback,
         result,
