@@ -64,3 +64,52 @@ model and creates clients only for entries marked `enabled`.
   legacy public configuration API. Per the task constraint, only `tests/config.rs`
   was updated; their migration belongs with the subsequent constructor/registry
   work.
+
+## Fix Round 1
+
+### Outcome
+
+Migrated the remaining Task 1 callers and existing ROS integration checks from
+the removed flat endpoint configuration API to `RosTaskClientConfig`.
+
+### Changed files
+
+- `ros2_ws/src/services/execution/src/lib.rs`
+  - `Execution::start` now builds the nested registry config with its supplied
+    device and action, preserving the current startup signature until Task 3.
+- `ros2_ws/src/control_plane/ros_task_client/tests/lifecycle.rs`
+  - Migrated existing lifecycle configuration helpers and timeout mutations to
+    the nested ROS and device fields.
+- `ros2_ws/src/control_plane/ros_task_client/tests/mock_exec.rs`
+  - Migrated the existing mock-execution configuration helper to the registry
+    model.
+
+### Checks run
+
+- `cargo fmt --all -- --check` — passed.
+- `git diff --check` — passed.
+- `! rg -n 'RosConnectionConfig|ExecEndpointConfig' --glob '*.rs'` — passed;
+  no Rust references to the removed public types remain.
+- `cargo check --workspace` — blocked before compilation because the repository
+  `.cargo/config.toml` references absent
+  `/opt/ros/jazzy/share/action_msgs/rust/Cargo.toml`.
+- `cargo test --manifest-path ros2_ws/src/control_plane/ros_task_client/Cargo.toml --tests`
+  — blocked by the same absent ROS Cargo patch path.
+- Retried that test command from an isolated copy without project Cargo
+  configuration. Compilation reached `rosidl_runtime_rs v0.6.1`, then its build
+  script stopped with `AMENT_PREFIX_PATH environment variable not set - please
+  source ROS 2 installation first`.
+
+### Self-review
+
+- `Execution::start` preserves its current parameters and creates the sole
+  replacement config directly; no compatibility types or adapters were added.
+- Existing lifecycle and mock checks retain their original device, action,
+  buffer, and timeout behavior under the nested model.
+- No special Rust visibility modifiers or new test files were added.
+
+### Concerns
+
+- Full compilation and ROS integration tests remain unavailable in this host:
+  the configured Jazzy generated Rust packages are absent, and the isolated
+  build also requires a sourced ROS 2 environment (`AMENT_PREFIX_PATH`).

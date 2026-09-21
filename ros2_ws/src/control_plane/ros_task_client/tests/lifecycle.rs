@@ -5,18 +5,24 @@ use std::{
 };
 
 use platform::{DeviceId, ExecutionError, ExecutionSession, Primitive, Task, TaskId};
-use ros_task_client::{ExecEndpointConfig, RosConnectionConfig, RosTaskClient, RosTaskError};
+use ros_task_client::{
+    DeviceConfig, RosRuntimeConfig, RosTaskClient, RosTaskClientConfig, RosTaskError,
+};
 use tokio_stream::StreamExt;
 
-fn config(test_name: &str) -> RosConnectionConfig {
-    RosConnectionConfig {
-        node_name: format!("ros_task_client_{test_name}_{}", std::process::id()),
-        endpoints: vec![ExecEndpointConfig {
-            device_id: "mock_exec".into(),
+fn config(test_name: &str) -> RosTaskClientConfig {
+    RosTaskClientConfig {
+        version: 1,
+        ros: RosRuntimeConfig {
+            node_name: format!("ros_task_client_{test_name}_{}", std::process::id()),
+            feedback_buffer: 8,
+            server_wait_timeout_ms: 100,
+        },
+        devices: vec![DeviceConfig {
+            id: "mock_exec".into(),
             action_name: "/mock_exec/execute_task".into(),
+            enabled: true,
         }],
-        feedback_buffer: 8,
-        server_wait_timeout: Duration::from_millis(100),
     }
 }
 
@@ -73,7 +79,7 @@ fn concurrent_shutdown_calls_are_bounded() {
 #[test]
 fn start_rejects_invalid_config_before_starting_executor() {
     let mut config = config("invalid");
-    config.feedback_buffer = 0;
+    config.ros.feedback_buffer = 0;
 
     assert!(matches!(
         RosTaskClient::start(config),
@@ -110,12 +116,13 @@ async fn unknown_device_returns_without_waiting_for_action_graph() {
 #[tokio::test(flavor = "multi_thread")]
 async fn absent_action_server_returns_after_configured_timeout() {
     let mut missing = config("absent_server");
-    missing.endpoints[0].action_name = "/missing/execute_task".into();
-    missing.server_wait_timeout = Duration::from_millis(100);
+    missing.devices[0].action_name = "/missing/execute_task".into();
+    missing.ros.server_wait_timeout_ms = 100;
     let (client, runtime) = RosTaskClient::start(missing.clone()).unwrap();
     let started = std::time::Instant::now();
 
-    let upper_bound = missing.server_wait_timeout + Duration::from_secs(1);
+    let server_wait_timeout = Duration::from_millis(missing.ros.server_wait_timeout_ms);
+    let upper_bound = server_wait_timeout + Duration::from_secs(1);
     let outcome = tokio::time::timeout(
         upper_bound,
         client.execute(Task {
@@ -129,7 +136,7 @@ async fn absent_action_server_returns_after_configured_timeout() {
     .await
     .expect("unavailable action server wait exceeded its upper bound");
 
-    assert!(started.elapsed() >= missing.server_wait_timeout);
+    assert!(started.elapsed() >= server_wait_timeout);
     assert!(started.elapsed() < upper_bound);
     assert!(matches!(
         outcome,

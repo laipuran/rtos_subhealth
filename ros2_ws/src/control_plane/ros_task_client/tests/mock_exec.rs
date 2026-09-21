@@ -1,17 +1,21 @@
 use std::{future::Future, time::Duration};
 
 use platform::{DeviceId, ExecutionError, ExecutionSession, Primitive, Task, TaskId};
-use ros_task_client::{ExecEndpointConfig, RosConnectionConfig, RosTaskClient};
+use ros_task_client::{DeviceConfig, RosRuntimeConfig, RosTaskClient, RosTaskClientConfig};
 
-fn config(test_name: &str, feedback_buffer: usize) -> RosConnectionConfig {
-    RosConnectionConfig {
-        node_name: format!("ros_task_client_{test_name}_{}", std::process::id()),
-        endpoints: vec![ExecEndpointConfig {
-            device_id: "mock_exec".into(),
+fn config(test_name: &str, feedback_buffer: usize) -> RosTaskClientConfig {
+    RosTaskClientConfig {
+        version: 1,
+        ros: RosRuntimeConfig {
+            node_name: format!("ros_task_client_{test_name}_{}", std::process::id()),
+            feedback_buffer,
+            server_wait_timeout_ms: 2_000,
+        },
+        devices: vec![DeviceConfig {
+            id: "mock_exec".into(),
             action_name: "/mock_exec/execute_task".into(),
+            enabled: true,
         }],
-        feedback_buffer,
-        server_wait_timeout: Duration::from_secs(2),
     }
 }
 
