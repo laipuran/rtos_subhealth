@@ -20,12 +20,47 @@ use tracing::info;
 
 use crate::{
     mapper::{from_ros_feedback, from_ros_result, to_ros_goal},
-    RosTaskClientConfig, RosTaskError, RosTaskRuntime,
+    DeviceConfig, RosTaskClientConfig, RosTaskError, RosTaskRuntime,
 };
 
-struct Endpoint {
+struct DeviceHandler {
     action_name: String,
     action_client: ActionClient<ExecuteTask>,
+}
+
+struct DeviceRegistry {
+    handlers: HashMap<String, DeviceHandler>,
+}
+
+impl DeviceRegistry {
+    fn new(node: &Node, devices: Vec<DeviceConfig>) -> Result<Self, RosTaskError> {
+        let mut handlers = HashMap::with_capacity(devices.len());
+        for device in devices.into_iter().filter(|device| device.enabled) {
+            let action_client = node
+                .create_action_client::<ExecuteTask>(&device.action_name)
+                .map_err(ros_error)?;
+            handlers.insert(
+                device.id,
+                DeviceHandler {
+                    action_name: device.action_name,
+                    action_client,
+                },
+            );
+        }
+        Ok(Self { handlers })
+    }
+
+    fn resolve(&self, device_id: &str) -> Result<&DeviceHandler, RosTaskError> {
+        self.handlers
+            .get(device_id)
+            .ok_or_else(|| RosTaskError::UnknownDevice {
+                device_id: device_id.into(),
+            })
+    }
+
+    fn len(&self) -> usize {
+        self.handlers.len()
+    }
 }
 
 const ACTION_POLL_INTERVAL: Duration = Duration::from_millis(25);
@@ -33,7 +68,7 @@ const READY_FEEDBACK_DRAIN_LIMIT: usize = 16;
 
 struct ClientState {
     node: Node,
-    endpoints: HashMap<String, Endpoint>,
+    registry: DeviceRegistry,
     stopping: Arc<AtomicBool>,
     shutdown_rx: watch::Receiver<bool>,
     feedback_buffer: usize,
@@ -46,26 +81,14 @@ pub struct RosTaskClient {
 }
 
 impl RosTaskClient {
-    pub fn start(config: RosTaskClientConfig) -> Result<(Self, RosTaskRuntime), RosTaskError> {
-        config.validate()?;
+    pub fn init() -> Result<(Self, RosTaskRuntime), RosTaskError> {
+        let config = RosTaskClientConfig::from_environment()?;
         let context = rclrs::Context::default_from_env().map_err(ros_error)?;
         let executor = context.create_basic_executor();
         let node = executor
             .create_node(config.ros.node_name.as_str())
             .map_err(ros_error)?;
-        let mut endpoints = HashMap::with_capacity(config.devices.len());
-        for device in config.devices.into_iter().filter(|device| device.enabled) {
-            let action_client = node
-                .create_action_client::<ExecuteTask>(&device.action_name)
-                .map_err(ros_error)?;
-            endpoints.insert(
-                device.id,
-                Endpoint {
-                    action_name: device.action_name,
-                    action_client,
-                },
-            );
-        }
+        let registry = DeviceRegistry::new(&node, config.devices)?;
         let stopping = Arc::new(AtomicBool::new(false));
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let runtime = RosTaskRuntime::start(executor, Arc::clone(&stopping), shutdown_tx)?;
@@ -73,7 +96,7 @@ impl RosTaskClient {
             Self {
                 state: Arc::new(ClientState {
                     node,
-                    endpoints,
+                    registry,
                     stopping,
                     shutdown_rx,
                     feedback_buffer: config.ros.feedback_buffer,
@@ -82,6 +105,11 @@ impl RosTaskClient {
             },
             runtime,
         ))
+    }
+
+    pub async fn validate(&self, task: &Task) -> Result<(), RosTaskError> {
+        self.state.registry.resolve(&task.device_id.0)?;
+        Ok(())
     }
 
     pub async fn execute(&self, task: Task) -> Result<ExecutionSession, ExecutionError> {
@@ -93,7 +121,8 @@ impl RosTaskClient {
             deadline_ms = ?task.deadline_ms,
             "ROS client executing task request"
         );
-        let goal = self.request_goal(&task).await?;
+        let handler = self.state.registry.resolve(&task.device_id.0)?;
+        let goal = self.request_goal(&task, handler).await?;
         let (feedback_tx, feedback_rx) = mpsc::channel(self.state.feedback_buffer);
         let (result_tx, result_rx) = oneshot::channel();
         let shutdown_rx = self.state.shutdown_rx.clone();
@@ -112,31 +141,30 @@ impl RosTaskClient {
         })
     }
 
-    async fn request_goal(&self, command: &Task) -> Result<GoalClient<ExecuteTask>, RosTaskError> {
+    async fn request_goal(
+        &self,
+        command: &Task,
+        handler: &DeviceHandler,
+    ) -> Result<GoalClient<ExecuteTask>, RosTaskError> {
         let state = &self.state;
         if state.stopping.load(Ordering::Acquire) || *state.shutdown_rx.borrow() {
             return Err(RosTaskError::Shutdown);
         }
-        let endpoint = state.endpoints.get(&command.device_id.0).ok_or_else(|| {
-            RosTaskError::UnknownDevice {
-                device_id: command.device_id.0.clone(),
-            }
-        })?;
         let raw_goal = to_ros_goal(command)?;
         let deadline = Instant::now() + state.server_wait_timeout;
         let mut shutdown_rx = state.shutdown_rx.clone();
         wait_for_server(
             &state.node,
-            endpoint,
+            handler,
             &command.device_id.0,
             deadline,
             &mut shutdown_rx,
         )
         .await?;
         if Instant::now() >= deadline {
-            return Err(unavailable(endpoint, &command.device_id.0));
+            return Err(unavailable(handler, &command.device_id.0));
         }
-        let requested_goal = endpoint
+        let requested_goal = handler
             .action_client
             .try_request_goal(raw_goal)
             .map_err(ros_error)?;
@@ -144,7 +172,7 @@ impl RosTaskClient {
             biased;
             _ = shutdown_rx.changed() => return Err(RosTaskError::Shutdown),
             accepted = tokio::time::timeout_at(deadline, requested_goal) => {
-                accepted.map_err(|_| unavailable(endpoint, &command.device_id.0))?
+                accepted.map_err(|_| unavailable(handler, &command.device_id.0))?
             }
         };
         accepted.ok_or_else(|| RosTaskError::GoalRejected {
@@ -155,7 +183,7 @@ impl RosTaskClient {
 
 async fn wait_for_server(
     node: &Node,
-    endpoint: &Endpoint,
+    handler: &DeviceHandler,
     device_id: &str,
     deadline: Instant,
     shutdown_rx: &mut watch::Receiver<bool>,
@@ -166,9 +194,9 @@ async fn wait_for_server(
         }
         let now = Instant::now();
         if now >= deadline {
-            return Err(unavailable(endpoint, device_id));
+            return Err(unavailable(handler, device_id));
         }
-        if action_server_is_ready(node, &endpoint.action_name).map_err(ros_error)? {
+        if action_server_is_ready(node, &handler.action_name).map_err(ros_error)? {
             return Ok(());
         }
         tokio::select! {
@@ -243,10 +271,10 @@ fn map_and_try_send_feedback(
     }
 }
 
-fn unavailable(endpoint: &Endpoint, device_id: &str) -> RosTaskError {
+fn unavailable(handler: &DeviceHandler, device_id: &str) -> RosTaskError {
     RosTaskError::ActionServerUnavailable {
         device_id: device_id.into(),
-        action_name: endpoint.action_name.clone(),
+        action_name: handler.action_name.clone(),
     }
 }
 
@@ -313,7 +341,7 @@ impl fmt::Debug for RosTaskClient {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("RosTaskClient")
-            .field("endpoint_count", &self.state.endpoints.len())
+            .field("device_count", &self.state.registry.len())
             .field("stopping", &self.state.stopping.load(Ordering::Acquire))
             .field("shutdown_requested", &*self.state.shutdown_rx.borrow())
             .field("feedback_buffer", &self.state.feedback_buffer)
