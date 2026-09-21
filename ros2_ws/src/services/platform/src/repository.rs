@@ -10,6 +10,8 @@ pub enum TaskRepositoryError {
     BusyDevice,
     #[error("task does not exist")]
     UnknownTask,
+    #[error("task is already terminal")]
+    TerminalTask,
     #[error("task target is invalid")]
     InvalidTarget,
     #[error("task storage failed: {0}")]
