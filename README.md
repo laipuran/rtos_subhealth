@@ -33,11 +33,11 @@ docs/architecture/                 权威架构与接口文档
 ```bash
 make check
 make webui
-make run server
 make humble  # 构建 Humble 镜像并进入容器；或使用 make jazzy
 
 # 以下命令在容器内执行
 make build
+ROS_TASK_CLIENT_CONFIG=/workspace/ros2_ws/config/devices.yaml make run server
 make run endpoint DEVICE_TYPE=mock-exec
 make run endpoint DEVICE_TYPE=mock-sensor
 ```
@@ -47,6 +47,11 @@ endpoint 时必须指定 `DEVICE_TYPE`。当前 `mock-exec` 和 `mock-sensor` �
 工作流开发 mock，并非 canonical `platform` ROS mapper。参数可通过
 `ENDPOINT_ARGS` 传给 ROS 节点。`make humble` 和 `make jazzy` 都会在镜像构建
 完成后直接进入对应的交互容器。
+
+启动服务端时必须设置 `ROS_TASK_CLIENT_CONFIG`，其值是设备注册表 YAML 的路径，
+例如 `/workspace/ros2_ws/config/devices.yaml`。Gateway 只负责启动 `Execution`；
+`ros_task_client` 在其初始化时读取该环境变量并加载、校验设备注册表。设备 ID 和
+ROS action 名称都在 YAML 中配置，不再由 Gateway 环境变量提供。
 
 ## 文档
 
