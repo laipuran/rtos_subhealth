@@ -19,6 +19,12 @@ services:
       HOME: /home/ubuntu
       RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
       ROS_DOMAIN_ID: "1"
+      # rust-analyzer is started by the VS Code remote extension, not by an
+      # interactive shell. Keep the ROS overlay visible to Cargo build scripts
+      # such as ros-env, which discovers generated Rust interfaces through
+      # AMENT_PREFIX_PATH.
+      AMENT_PREFIX_PATH: /ws/${ROS_DISTRO:-jazzy}/install:/opt/ros/${ROS_DISTRO:-jazzy}
+      CMAKE_PREFIX_PATH: /ws/${ROS_DISTRO:-jazzy}/install:/opt/ros/${ROS_DISTRO:-jazzy}
       # Keep generated ROS/Cargo state separate for each distro while retaining
       # the shared named volume. Override ROS_BUILD_ROOT when needed.
       ROS_BUILD_ROOT: ${ROS_BUILD_ROOT:-/ws/${ROS_DISTRO:-jazzy}}
