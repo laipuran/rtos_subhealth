@@ -20,7 +20,7 @@ use tracing::info;
 
 use crate::{
     mapper::{from_ros_feedback, from_ros_result, to_ros_goal},
-    RosConnectionConfig, RosTaskError, RosTaskRuntime,
+    RosTaskClientConfig, RosTaskError, RosTaskRuntime,
 };
 
 struct Endpoint {
@@ -46,22 +46,22 @@ pub struct RosTaskClient {
 }
 
 impl RosTaskClient {
-    pub fn start(config: RosConnectionConfig) -> Result<(Self, RosTaskRuntime), RosTaskError> {
+    pub fn start(config: RosTaskClientConfig) -> Result<(Self, RosTaskRuntime), RosTaskError> {
         config.validate()?;
         let context = rclrs::Context::default_from_env().map_err(ros_error)?;
         let executor = context.create_basic_executor();
         let node = executor
-            .create_node(config.node_name.as_str())
+            .create_node(config.ros.node_name.as_str())
             .map_err(ros_error)?;
-        let mut endpoints = HashMap::with_capacity(config.endpoints.len());
-        for endpoint in config.endpoints {
+        let mut endpoints = HashMap::with_capacity(config.devices.len());
+        for device in config.devices.into_iter().filter(|device| device.enabled) {
             let action_client = node
-                .create_action_client::<ExecuteTask>(&endpoint.action_name)
+                .create_action_client::<ExecuteTask>(&device.action_name)
                 .map_err(ros_error)?;
             endpoints.insert(
-                endpoint.device_id,
+                device.id,
                 Endpoint {
-                    action_name: endpoint.action_name,
+                    action_name: device.action_name,
                     action_client,
                 },
             );
@@ -76,8 +76,8 @@ impl RosTaskClient {
                     endpoints,
                     stopping,
                     shutdown_rx,
-                    feedback_buffer: config.feedback_buffer,
-                    server_wait_timeout: config.server_wait_timeout,
+                    feedback_buffer: config.ros.feedback_buffer,
+                    server_wait_timeout: Duration::from_millis(config.ros.server_wait_timeout_ms),
                 }),
             },
             runtime,

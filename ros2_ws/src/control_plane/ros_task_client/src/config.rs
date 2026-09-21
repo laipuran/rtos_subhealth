@@ -1,60 +1,94 @@
-use std::{collections::HashSet, time::Duration};
+use std::{collections::HashSet, env, fs, path::Path};
 
 use crate::RosTaskError;
+use serde::Deserialize;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RosConnectionConfig {
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RosTaskClientConfig {
+    pub version: u32,
+    pub ros: RosRuntimeConfig,
+    pub devices: Vec<DeviceConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RosRuntimeConfig {
     pub node_name: String,
-    pub endpoints: Vec<ExecEndpointConfig>,
     pub feedback_buffer: usize,
-    pub server_wait_timeout: Duration,
+    pub server_wait_timeout_ms: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExecEndpointConfig {
-    pub device_id: String,
-    /// Canonical absolute action name. Endpoint remapping is unsupported with
-    /// rclrs 0.7 because it does not expose the ActionClient's resolved name.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceConfig {
+    pub id: String,
     pub action_name: String,
+    pub enabled: bool,
 }
 
-impl RosConnectionConfig {
+impl RosTaskClientConfig {
+    pub fn from_environment() -> Result<Self, RosTaskError> {
+        let path =
+            env::var_os("ROS_TASK_CLIENT_CONFIG").ok_or_else(|| RosTaskError::ConfigLoad {
+                message: "ROS_TASK_CLIENT_CONFIG is not set".into(),
+            })?;
+        Self::from_path(Path::new(&path))
+    }
+
+    pub fn from_path(path: &Path) -> Result<Self, RosTaskError> {
+        let contents = fs::read_to_string(path).map_err(|error| RosTaskError::ConfigLoad {
+            message: format!("could not read {}: {error}", path.display()),
+        })?;
+        let config = serde_yaml::from_str(&contents).map_err(|error| RosTaskError::ConfigLoad {
+            message: format!("could not parse {}: {error}", path.display()),
+        })?;
+        config.validate()?;
+        Ok(config)
+    }
+
     pub fn validate(&self) -> Result<(), RosTaskError> {
-        validate_name("node_name", &self.node_name)?;
-        if self.feedback_buffer == 0 {
+        if self.version != 1 {
+            return Err(RosTaskError::InvalidConfig {
+                field: "version",
+                message: "must be 1".into(),
+            });
+        }
+        validate_name("node_name", &self.ros.node_name)?;
+        if self.ros.feedback_buffer == 0 {
             return Err(RosTaskError::InvalidConfig {
                 field: "feedback_buffer",
                 message: "must be greater than zero".into(),
             });
         }
-        if self.server_wait_timeout.is_zero() {
+        if self.ros.server_wait_timeout_ms == 0 {
             return Err(RosTaskError::InvalidConfig {
-                field: "server_wait_timeout",
+                field: "server_wait_timeout_ms",
                 message: "must be greater than zero".into(),
             });
         }
 
         let mut device_ids = HashSet::new();
         let mut action_names = HashSet::new();
-        for endpoint in &self.endpoints {
-            validate_name("device_id", &endpoint.device_id)?;
-            validate_name("action_name", &endpoint.action_name)?;
-            if !is_canonical_absolute_ros_name(&endpoint.action_name) {
+        for device in &self.devices {
+            validate_name("device_id", &device.id)?;
+            validate_name("action_name", &device.action_name)?;
+            if !is_canonical_absolute_ros_name(&device.action_name) {
                 return Err(RosTaskError::InvalidConfig {
                     field: "action_name",
                     message: "must be a canonical absolute ROS action name".into(),
                 });
             }
-            if !device_ids.insert(endpoint.device_id.as_str()) {
+            if !device_ids.insert(device.id.as_str()) {
                 return Err(RosTaskError::InvalidConfig {
                     field: "device_id",
-                    message: format!("duplicate device ID `{}`", endpoint.device_id),
+                    message: format!("duplicate device ID `{}`", device.id),
                 });
             }
-            if !action_names.insert(endpoint.action_name.as_str()) {
+            if !action_names.insert(device.action_name.as_str()) {
                 return Err(RosTaskError::InvalidConfig {
                     field: "action_name",
-                    message: format!("duplicate action name `{}`", endpoint.action_name),
+                    message: format!("duplicate action name `{}`", device.action_name),
                 });
             }
         }

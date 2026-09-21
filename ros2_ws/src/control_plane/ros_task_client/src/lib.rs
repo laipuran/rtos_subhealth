@@ -7,6 +7,6 @@ mod mapper;
 mod runtime;
 
 pub use client::RosTaskClient;
-pub use config::{ExecEndpointConfig, RosConnectionConfig};
+pub use config::{DeviceConfig, RosRuntimeConfig, RosTaskClientConfig};
 pub use error::RosTaskError;
 pub use runtime::RosTaskRuntime;

@@ -8,6 +8,8 @@ impl From<RosTaskError> for platform::ExecutionError {
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum RosTaskError {
+    #[error("configuration error: {message}")]
+    ConfigLoad { message: String },
     #[error("invalid configuration for {field}: {message}")]
     InvalidConfig {
         field: &'static str,
