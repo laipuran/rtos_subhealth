@@ -1,7 +1,7 @@
-use platform::{DeviceId, TaskId};
-use platform::{ExecutionError, ExecutionFeedback, ExecutionResult, ExecutionSession};
-use platform::{Task, TaskState};
-use std::collections::HashMap;
+use platform::{
+    ExecutionError, ExecutionFeedback, ExecutionResult, ExecutionSession, Task, TaskRecord,
+    TaskRepository, TaskRepositoryError, TaskState,
+};
 use std::sync::Arc;
 use std::{future::Future, pin::Pin};
 
@@ -16,87 +16,83 @@ pub trait ExecutionPort: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = Result<ExecutionSession, ExecutionError>> + Send + '_>>;
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ActiveTask {
-    pub task: Task,
-    pub state: TaskState,
-    pub progress: f32,
-    pub phase: String,
-}
-
 pub struct Orchestrator {
     execution: Arc<dyn ExecutionPort>,
-    active: HashMap<TaskId, ActiveTask>,
-    device_tasks: HashMap<DeviceId, TaskId>,
+    repository: Arc<dyn TaskRepository>,
 }
 
 impl Orchestrator {
-    pub fn new(execution: Arc<dyn ExecutionPort>) -> Self {
+    pub fn new(execution: Arc<dyn ExecutionPort>, repository: Arc<dyn TaskRepository>) -> Self {
         Self {
             execution,
-            active: HashMap::new(),
-            device_tasks: HashMap::new(),
+            repository,
         }
     }
 
-    pub async fn submit(&mut self, task: Task) -> Result<ExecutionSession, OrchestrationError> {
-        if self.active.contains_key(&task.id) {
-            return Err(OrchestrationError::Duplicate);
-        }
-        let device_id = task.device_id.clone();
-        if self.device_tasks.contains_key(&device_id) {
-            return Err(OrchestrationError::Busy);
-        }
-        if task.target.is_empty() {
-            return Err(OrchestrationError::InvalidTarget);
-        }
+    pub async fn submit(&self, task: Task) -> Result<ExecutionSession, OrchestrationError> {
+        let record = self
+            .repository
+            .create_task(
+                task.device_id,
+                task.primitive,
+                task.target,
+                task.deadline_ms,
+            )
+            .map_err(OrchestrationError::from)?;
         let session = self
             .execution
-            .execute(task.clone())
+            .execute(record.task.clone())
             .await
-            .map_err(|error| OrchestrationError::Execution(error.to_string()))?;
-        self.device_tasks.insert(device_id.clone(), task.id.clone());
-        self.active.insert(
-            task.id.clone(),
-            ActiveTask {
-                task,
-                state: TaskState::Accepted,
-                progress: 0.0,
-                phase: "accepted".into(),
-            },
-        );
+            .map_err(|error| {
+                let _ = self.repository.apply_result(ExecutionResult {
+                    task_id: record.task.id.clone(),
+                    state: "failed".into(),
+                });
+                OrchestrationError::Execution(error.to_string())
+            })?;
         Ok(session)
     }
 
-    pub fn feedback(
-        &mut self,
-        feedback: ExecutionFeedback,
-    ) -> Result<&ActiveTask, OrchestrationError> {
-        let active = self
-            .active
-            .get_mut(&feedback.task_id)
-            .ok_or(OrchestrationError::UnknownTask)?;
-        active.state = TaskState::Running;
-        active.progress = feedback.progress.clamp(0.0, 1.0);
-        active.phase = feedback.phase;
-        Ok(active)
+    pub fn feedback(&self, feedback: ExecutionFeedback) -> Result<TaskRecord, OrchestrationError> {
+        reject_if_terminal(&feedback.task_id, self.repository.as_ref())?;
+        let record = self
+            .repository
+            .apply_feedback(feedback)
+            .map_err(OrchestrationError::from)?;
+        Ok(record)
     }
 
-    pub fn complete(&mut self, result: ExecutionResult) -> Result<ActiveTask, OrchestrationError> {
-        let mut active = self
-            .active
-            .remove(&result.task_id)
-            .ok_or(OrchestrationError::UnknownTask)?;
-        self.device_tasks.remove(&active.task.device_id);
-        active.state = if result.state == "succeeded" {
-            TaskState::Succeeded
-        } else {
-            TaskState::Failed
-        };
-        Ok(active)
+    pub fn complete(&self, result: ExecutionResult) -> Result<TaskRecord, OrchestrationError> {
+        reject_if_terminal(&result.task_id, self.repository.as_ref())?;
+        let record = self
+            .repository
+            .apply_result(result)
+            .map_err(OrchestrationError::from)?;
+        Ok(record)
     }
+}
 
-    pub fn task(&self, id: &TaskId) -> Option<&ActiveTask> {
-        self.active.get(id)
+fn reject_if_terminal(
+    task_id: &platform::TaskId,
+    repository: &dyn TaskRepository,
+) -> Result<(), OrchestrationError> {
+    let record = repository
+        .get_task(task_id)
+        .map_err(OrchestrationError::from)?;
+    if matches!(record.state, TaskState::Succeeded | TaskState::Failed) {
+        return Err(OrchestrationError::TerminalTask);
+    }
+    Ok(())
+}
+
+impl From<TaskRepositoryError> for OrchestrationError {
+    fn from(error: TaskRepositoryError) -> Self {
+        match error {
+            TaskRepositoryError::DuplicateTask => Self::Duplicate,
+            TaskRepositoryError::BusyDevice => Self::Busy,
+            TaskRepositoryError::UnknownTask => Self::UnknownTask,
+            TaskRepositoryError::InvalidTarget => Self::InvalidTarget,
+            TaskRepositoryError::Storage(error) => Self::Repository(error),
+        }
     }
 }
