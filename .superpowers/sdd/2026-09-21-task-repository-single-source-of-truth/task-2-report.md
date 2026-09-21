@@ -39,3 +39,19 @@ from `/tmp/opencode` avoids that host-only configuration and passed.
 
 No Gateway, Orchestration, tests, adapters, compatibility paths, or task fields
 were added or modified.
+
+## Review Fixes
+
+- `apply_result` now returns an existing `Succeeded` or `Failed` record unchanged,
+  preventing later terminal results from overwriting terminal state.
+- Feedback keeps finite progress clamped to `[0.0, 1.0]` and normalizes non-finite
+  progress to `0.0`, so repository records never store `NaN` without adding an
+  error/API surface.
+
+## Review Fix Verification
+
+- `cargo fmt --check --manifest-path .../task_repository/Cargo.toml` — passed.
+- `cargo check --manifest-path .../platform/Cargo.toml` — passed.
+- `cargo check --manifest-path .../task_repository/Cargo.toml` — passed.
+- `cargo clippy --manifest-path .../task_repository/Cargo.toml -- -D warnings`
+  — passed.

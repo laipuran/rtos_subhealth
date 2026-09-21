@@ -124,7 +124,11 @@ impl TaskRepository for InMemoryTaskRepository {
             return Ok(record.clone());
         }
         record.state = TaskState::Running;
-        record.progress = feedback.progress.clamp(0.0, 1.0);
+        record.progress = if feedback.progress.is_finite() {
+            feedback.progress.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
         record.phase = feedback.phase;
         Ok(record.clone())
     }
@@ -138,6 +142,9 @@ impl TaskRepository for InMemoryTaskRepository {
         let record = records
             .get_mut(&result.task_id)
             .ok_or(TaskRepositoryError::UnknownTask)?;
+        if matches!(record.state, TaskState::Succeeded | TaskState::Failed) {
+            return Ok(record.clone());
+        }
         record.state = if result.state == "succeeded" {
             TaskState::Succeeded
         } else {
