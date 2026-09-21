@@ -69,7 +69,13 @@ class MockExecLayerNode(Node):
                 goal_handle, 'failed', 'UNSUPPORTED_PRIMITIVE', str(error)
             )
 
-        for step in steps:
+        for step_index, step in enumerate(steps, start=1):
+            self.get_logger().info(
+                f"executing task_id={request.task_id} "
+                f"current_tag={step.details['current_tag']} "
+                f"next_tag={step.details['next_tag']} "
+                f"progress={step.progress:.3f} step_index={step_index}"
+            )
             if self._step_delay_s > 0.0:
                 time.sleep(self._step_delay_s)
             if self._deadline_expired(request.deadline_unix_ms):

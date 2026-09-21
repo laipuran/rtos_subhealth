@@ -20,6 +20,13 @@ pub async fn create_task(
     State(state): State<AppState>,
     Json(input): Json<CreateTask>,
 ) -> Result<(StatusCode, Json<TaskView>), StatusCode> {
+    tracing::info!(
+        device_id = ?input.device_id,
+        primitive = ?input.primitive,
+        target = ?input.target,
+        deadline_ms = ?input.deadline_ms,
+        "gateway received task request"
+    );
     state
         .create_task(input)
         .await

@@ -16,6 +16,7 @@ use tokio::{
     time::Instant,
 };
 use tokio_stream::wrappers::ReceiverStream;
+use tracing::info;
 
 use crate::{
     mapper::{from_ros_feedback, from_ros_result, to_ros_goal},
@@ -84,6 +85,14 @@ impl RosTaskClient {
     }
 
     pub async fn execute(&self, task: Task) -> Result<ExecutionSession, ExecutionError> {
+        info!(
+            task_id = %task.id.0,
+            device_id = %task.device_id.0,
+            primitive = ?task.primitive,
+            target = ?task.target,
+            deadline_ms = ?task.deadline_ms,
+            "ROS client executing task request"
+        );
         let goal = self.request_goal(&task).await?;
         let (feedback_tx, feedback_rx) = mpsc::channel(self.state.feedback_buffer);
         let (result_tx, result_rx) = oneshot::channel();
