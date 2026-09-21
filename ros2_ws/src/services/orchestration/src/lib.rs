@@ -10,6 +10,11 @@ mod error;
 pub use error::OrchestrationError;
 
 pub trait ExecutionPort: Send + Sync {
+    fn validate(
+        &self,
+        task: &Task,
+    ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + '_>>;
+
     fn execute(
         &self,
         task: Task,
@@ -33,6 +38,10 @@ impl Orchestrator {
         &self,
         task: Task,
     ) -> Result<(TaskRecord, ExecutionSession), OrchestrationError> {
+        self.execution
+            .validate(&task)
+            .await
+            .map_err(|error| OrchestrationError::Execution(error.to_string()))?;
         let record = self
             .repository
             .create_task(

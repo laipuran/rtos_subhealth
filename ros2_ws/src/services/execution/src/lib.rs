@@ -26,6 +26,18 @@ impl Execution {
 }
 
 impl ExecutionPort for Execution {
+    fn validate(
+        &self,
+        task: &Task,
+    ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + '_>> {
+        Box::pin(async move {
+            self.client
+                .validate(task)
+                .await
+                .map_err(ExecutionError::from)
+        })
+    }
+
     fn execute(
         &self,
         task: Task,
