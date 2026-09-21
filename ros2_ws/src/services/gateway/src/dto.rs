@@ -1,6 +1,5 @@
-use platform::{DeviceId, Primitive, Task, TaskId, TaskState};
+use platform::{DeviceId, Primitive, Task, TaskId};
 use serde::Deserialize;
-use serde::Serialize;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateTask {
@@ -11,21 +10,13 @@ pub struct CreateTask {
 }
 
 impl CreateTask {
-    pub fn into_task(self, id: TaskId) -> Task {
+    pub fn into_task(self) -> Task {
         Task {
-            id,
+            id: TaskId(String::new()),
             device_id: self.device_id,
             primitive: self.primitive,
             target: self.target,
             deadline_ms: self.deadline_ms,
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct TaskView {
-    pub task: Task,
-    pub state: TaskState,
-    pub progress: f32,
-    pub phase: String,
 }

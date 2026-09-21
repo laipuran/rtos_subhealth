@@ -529,6 +529,7 @@ dependencies = [
  "platform",
  "serde",
  "serde_json",
+ "task_repository",
  "tokio",
  "tracing",
  "tracing-subscriber",

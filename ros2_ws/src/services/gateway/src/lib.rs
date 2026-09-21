@@ -4,7 +4,7 @@ mod dto;
 mod handlers;
 mod state;
 
-pub use dto::{CreateTask, TaskView};
+pub use dto::CreateTask;
 pub use state::AppState;
 
 use crate::handlers::{create_task, events, get_task, list_tasks};

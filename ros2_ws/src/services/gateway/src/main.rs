@@ -4,6 +4,7 @@ use execution::Execution;
 use gateway::{app, AppState};
 use orchestration::Orchestrator;
 use platform::DeviceId;
+use task_repository::InMemoryTaskRepository;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -18,7 +19,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let action_name = std::env::var("GATEWAY_EXECUTION_ACTION_NAME")
         .unwrap_or_else(|_| "/mock_exec/execute_task".into());
     let execution = Arc::new(Execution::start(device_id, action_name)?);
-    let state = AppState::new(Orchestrator::new(execution.clone()));
+    let repository = Arc::new(InMemoryTaskRepository::new());
+    let state = AppState::new(
+        Orchestrator::new(execution.clone(), repository.clone()),
+        repository,
+    );
     axum::serve(listener, app(state)).await?;
     execution.shutdown()?;
     Ok(())

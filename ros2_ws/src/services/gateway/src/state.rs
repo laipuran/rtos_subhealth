@@ -1,19 +1,17 @@
-use std::{
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
 };
 
 use futures_util::StreamExt;
-use orchestration::{ActiveTask, OrchestrationError, Orchestrator};
+use orchestration::{OrchestrationError, Orchestrator};
 use platform::{
-    ExecutionFeedback, ExecutionResult, ExecutionSession, SystemEvent, TaskId, TaskState,
+    ExecutionFeedback, ExecutionResult, ExecutionSession, SystemEvent, TaskId, TaskRecord,
+    TaskRepository,
 };
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{broadcast, Mutex};
 
-use crate::dto::{CreateTask, TaskView};
+use crate::dto::CreateTask;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -21,20 +19,18 @@ pub struct AppState {
 }
 
 pub struct AppStateInner {
-    tasks: RwLock<HashMap<TaskId, TaskView>>,
-    task_sequence: AtomicU64,
+    repository: Arc<dyn TaskRepository>,
     event_sequence: AtomicU64,
     events: broadcast::Sender<(u64, SystemEvent)>,
     orchestrator: Mutex<Orchestrator>,
 }
 
 impl AppState {
-    pub fn new(orchestrator: Orchestrator) -> Self {
+    pub fn new(orchestrator: Orchestrator, repository: Arc<dyn TaskRepository>) -> Self {
         let (events, _) = broadcast::channel(128);
         Self {
             inner: Arc::new(AppStateInner {
-                tasks: RwLock::new(HashMap::new()),
-                task_sequence: AtomicU64::new(0),
+                repository,
                 event_sequence: AtomicU64::new(0),
                 events,
                 orchestrator: Mutex::new(orchestrator),
@@ -42,46 +38,35 @@ impl AppState {
         }
     }
 
-    pub async fn create_task(&self, input: CreateTask) -> Result<TaskView, OrchestrationError> {
-        let id = self.next_task_id();
-        let task = input.into_task(id.clone());
-        let session = self
+    pub async fn create_task(&self, input: CreateTask) -> Result<TaskRecord, OrchestrationError> {
+        let (record, session) = self
             .inner
             .orchestrator
             .lock()
             .await
-            .submit(task.clone())
+            .submit(input.into_task())
             .await?;
-        let view = TaskView {
-            task,
-            state: TaskState::Accepted,
-            progress: 0.0,
-            phase: "accepted".into(),
-        };
-
-        self.inner.tasks.write().await.insert(id, view.clone());
-        self.emit_task_state(&view.task.id, view.state.clone());
-        self.consume_session(view.task.id.clone(), session);
-        Ok(view)
+        self.emit_task_state(&record);
+        self.consume_session(record.task.id.clone(), session);
+        Ok(record)
     }
 
-    pub async fn list_tasks(&self) -> Vec<TaskView> {
-        self.inner.tasks.read().await.values().cloned().collect()
+    pub fn list_tasks(&self) -> Result<Vec<TaskRecord>, OrchestrationError> {
+        self.inner
+            .repository
+            .list_tasks()
+            .map_err(OrchestrationError::from)
     }
 
-    pub async fn task(&self, id: &TaskId) -> Option<TaskView> {
-        self.inner.tasks.read().await.get(id).cloned()
+    pub fn task(&self, id: &TaskId) -> Result<TaskRecord, OrchestrationError> {
+        self.inner
+            .repository
+            .get_task(id)
+            .map_err(OrchestrationError::from)
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<(u64, SystemEvent)> {
         self.inner.events.subscribe()
-    }
-
-    fn next_task_id(&self) -> TaskId {
-        TaskId(format!(
-            "task-{}",
-            self.inner.task_sequence.fetch_add(1, Ordering::Relaxed) + 1
-        ))
     }
 
     fn consume_session(&self, task_id: TaskId, session: ExecutionSession) {
@@ -123,53 +108,34 @@ impl AppState {
     }
 
     async fn apply_feedback(&self, feedback: ExecutionFeedback) {
-        let active = match self.inner.orchestrator.lock().await.feedback(feedback) {
-            Ok(active) => active.clone(),
+        let record = match self.inner.orchestrator.lock().await.feedback(feedback) {
+            Ok(record) => record,
             Err(error) => {
                 tracing::warn!(%error, "unable to apply execution feedback");
                 return;
             }
         };
-        self.update_projection(active).await;
+        self.emit_task_state(&record);
     }
 
     async fn apply_result(&self, result: ExecutionResult) {
-        let active = match self.inner.orchestrator.lock().await.complete(result) {
-            Ok(active) => active,
+        let record = match self.inner.orchestrator.lock().await.complete(result) {
+            Ok(record) => record,
             Err(error) => {
                 tracing::warn!(%error, "unable to apply execution result");
                 return;
             }
         };
-        self.update_projection(active).await;
+        self.emit_task_state(&record);
     }
 
-    async fn update_projection(&self, active: ActiveTask) {
-        let state_changed = {
-            let mut tasks = self.inner.tasks.write().await;
-            let Some(view) = tasks.get_mut(&active.task.id) else {
-                tracing::warn!(task_id = %active.task.id.0, "task projection is missing");
-                return;
-            };
-            let state_changed = view.state != active.state;
-            view.state = active.state.clone();
-            view.progress = active.progress;
-            view.phase = active.phase;
-            state_changed
-        };
-
-        if state_changed {
-            self.emit_task_state(&active.task.id, active.state);
-        }
-    }
-
-    fn emit_task_state(&self, task_id: &TaskId, state: TaskState) {
+    fn emit_task_state(&self, record: &TaskRecord) {
         let sequence = self.inner.event_sequence.fetch_add(1, Ordering::Relaxed) + 1;
         let _ = self.inner.events.send((
             sequence,
             SystemEvent::TaskStateChanged {
-                task_id: task_id.clone(),
-                state,
+                task_id: record.task.id.clone(),
+                state: record.state.clone(),
             },
         ));
     }

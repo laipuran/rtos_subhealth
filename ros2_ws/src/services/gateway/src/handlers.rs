@@ -1,10 +1,7 @@
 use orchestration::OrchestrationError;
 use platform::TaskId;
 
-use crate::{
-    dto::{CreateTask, TaskView},
-    state::AppState,
-};
+use crate::{dto::CreateTask, state::AppState};
 use axum::{
     extract::{Path, State, WebSocketUpgrade},
     http::StatusCode,
@@ -12,14 +9,16 @@ use axum::{
     Json,
 };
 
-pub async fn list_tasks(State(state): State<AppState>) -> Json<Vec<TaskView>> {
-    Json(state.list_tasks().await)
+pub async fn list_tasks(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<platform::TaskRecord>>, StatusCode> {
+    state.list_tasks().map(Json).map_err(repository_status)
 }
 
 pub async fn create_task(
     State(state): State<AppState>,
     Json(input): Json<CreateTask>,
-) -> Result<(StatusCode, Json<TaskView>), StatusCode> {
+) -> Result<(StatusCode, Json<platform::TaskRecord>), StatusCode> {
     tracing::info!(
         device_id = ?input.device_id,
         primitive = ?input.primitive,
@@ -37,12 +36,8 @@ pub async fn create_task(
 pub async fn get_task(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<TaskView>, StatusCode> {
-    state
-        .task(&TaskId(id))
-        .await
-        .map(Json)
-        .ok_or(StatusCode::NOT_FOUND)
+) -> Result<Json<platform::TaskRecord>, StatusCode> {
+    state.task(&TaskId(id)).map(Json).map_err(repository_status)
 }
 
 pub async fn events(State(state): State<AppState>, ws: WebSocketUpgrade) -> impl IntoResponse {
@@ -67,5 +62,12 @@ fn submission_status(error: OrchestrationError) -> StatusCode {
         OrchestrationError::InvalidTarget => StatusCode::BAD_REQUEST,
         OrchestrationError::Execution(_) => StatusCode::BAD_GATEWAY,
         OrchestrationError::UnknownTask => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
+fn repository_status(error: OrchestrationError) -> StatusCode {
+    match error {
+        OrchestrationError::UnknownTask => StatusCode::NOT_FOUND,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }

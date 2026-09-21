@@ -29,7 +29,10 @@ impl Orchestrator {
         }
     }
 
-    pub async fn submit(&self, task: Task) -> Result<ExecutionSession, OrchestrationError> {
+    pub async fn submit(
+        &self,
+        task: Task,
+    ) -> Result<(TaskRecord, ExecutionSession), OrchestrationError> {
         let record = self
             .repository
             .create_task(
@@ -52,7 +55,7 @@ impl Orchestrator {
                         Ok(_) => OrchestrationError::Execution(error.to_string()),
                     }
                 })?;
-        Ok(session)
+        Ok((record, session))
     }
 
     pub fn feedback(&self, feedback: ExecutionFeedback) -> Result<TaskRecord, OrchestrationError> {
