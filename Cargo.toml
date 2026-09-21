@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "ros2_ws/src/services/platform",
+    "ros2_ws/src/services/task_repository",
     "ros2_ws/src/services/sensor",
     "ros2_ws/src/services/execution",
     "ros2_ws/src/services/orchestration",
