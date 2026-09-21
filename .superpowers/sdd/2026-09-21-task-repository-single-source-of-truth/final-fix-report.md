@@ -19,10 +19,17 @@ compatibility paths, or extra task fields were added.
 - Host `cargo check --workspace` — blocked by the host-only missing ROS path
   `/opt/ros/jazzy/share/action_msgs/rust`; this is why the container check is
   authoritative.
+- Removed stale `[[patch.unused]]` records from `Cargo.lock`; the current root
+  `Cargo.toml` has no corresponding `[patch]` configuration.
+- `cargo metadata --locked --no-deps --format-version 1` — passed after the
+  lockfile cleanup.
+- `git diff --check -- Cargo.lock` — passed.
+- Host `cargo check --locked -p task_repository` remains blocked by the same
+  missing ROS path noted above.
 
 ## Commit
 
-This report is included with the final-fix commit.
+This report is included with the final repository-plan metadata fix commit.
 
 ## Concerns
 
