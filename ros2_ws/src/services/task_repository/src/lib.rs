@@ -1,3 +1,7 @@
+//! 内存中的 [`platform::TaskRepository`] 实现。
+//!
+//! 该 crate 用于当前控制平面运行时和开发验证；它不提供跨进程持久化。
+
 use platform::{
     DeviceId, ExecutionFeedback, ExecutionResult, Primitive, TaskId, TaskRecord, TaskRepository,
     TaskRepositoryError, TaskState,
@@ -17,6 +21,7 @@ pub struct InMemoryTaskRepository {
 }
 
 impl InMemoryTaskRepository {
+    /// 创建一个空的 Repository，任务 ID 从 `task-1` 开始生成。
     pub fn new() -> Self {
         Self {
             state: Arc::new(RepositoryState {

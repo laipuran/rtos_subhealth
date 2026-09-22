@@ -76,16 +76,19 @@ struct ClientState {
 }
 
 #[derive(Clone)]
+/// 将 canonical task 路由到已注册 ROS action server 的客户端。
 pub struct RosTaskClient {
     state: Arc<ClientState>,
 }
 
 impl RosTaskClient {
+    /// 从 `ROS_TASK_CLIENT_CONFIG` 初始化 client 和 ROS runtime。
     pub fn init() -> Result<(Self, RosTaskRuntime), RosTaskError> {
         let config = RosTaskClientConfig::from_environment()?;
         Self::init_with_config(config)
     }
 
+    /// 使用显式配置初始化 client 和 ROS runtime。
     pub fn init_with_config(
         config: RosTaskClientConfig,
     ) -> Result<(Self, RosTaskRuntime), RosTaskError> {
@@ -114,11 +117,16 @@ impl RosTaskClient {
         ))
     }
 
+    /// 检查任务的设备是否存在于 enabled registry 中。
     pub async fn validate(&self, task: &Task) -> Result<(), RosTaskError> {
         self.state.registry.resolve(&task.device_id.0)?;
         Ok(())
     }
 
+    /// 向目标 ROS action server 发送任务并返回执行会话。
+    ///
+    /// action server 的反馈会进入 [`platform::ExecutionSession::feedback`]，
+    /// 最终结果会进入 [`platform::ExecutionSession::result`]。
     pub async fn execute(&self, task: Task) -> Result<ExecutionSession, ExecutionError> {
         info!(
             task_id = %task.id.0,

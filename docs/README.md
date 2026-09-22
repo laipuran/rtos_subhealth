@@ -6,6 +6,7 @@
 
 - [模块接口](interfaces/README.md)：模块之间的 seam、公开入口、错误和生命周期约束。
 - [设计决策](decisions/README.md)：当前实现仍然依赖的架构取舍及其动机。
+- [Rustdoc 准则](standards/rustdoc.md)：Rust 公开接口注释的语言、格式和内容约定。
 - [快速开始](guide/getting-started.md)：构建、运行和开发环境。
 - [ROS mock 指南](guide/ros-mocks.md)：mock endpoint 和 ROS 接口的运行方式。
 - [医学资料](medical/)：健康诊断相关的领域资料。

@@ -5,29 +5,46 @@ use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
+/// ROS task client 的完整 YAML 配置。
 pub struct RosTaskClientConfig {
+    /// 配置格式版本，当前必须为 `1`。
     pub version: u32,
+    /// ROS executor 和反馈缓冲区配置。
     pub ros: RosRuntimeConfig,
+    /// 设备 ID 到 ROS action 名称的注册表。
     pub devices: Vec<DeviceConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
+/// ROS 节点运行时配置。
 pub struct RosRuntimeConfig {
+    /// ROS node 名称。
     pub node_name: String,
+    /// 每个执行会话的 feedback 缓冲容量。
     pub feedback_buffer: usize,
+    /// 等待 action server 和 goal 接受的超时时间，单位为 milliseconds。
     pub server_wait_timeout_ms: u64,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
+/// 一个可执行设备的静态注册信息。
 pub struct DeviceConfig {
+    /// 任务使用的设备 ID。
     pub id: String,
+    /// 设备对应的绝对 ROS action 名称。
     pub action_name: String,
+    /// 是否将该设备加入运行时 registry。
     pub enabled: bool,
 }
 
 impl RosTaskClientConfig {
+    /// 从 `ROS_TASK_CLIENT_CONFIG` 指定的路径加载并校验配置。
+    ///
+    /// # 错误
+    ///
+    /// 环境变量缺失、文件无法读取、YAML 无法解析或配置校验失败时返回错误。
     pub fn from_environment() -> Result<Self, RosTaskError> {
         let path =
             env::var_os("ROS_TASK_CLIENT_CONFIG").ok_or_else(|| RosTaskError::ConfigLoad {
@@ -36,6 +53,7 @@ impl RosTaskClientConfig {
         Self::from_path(Path::new(&path))
     }
 
+    /// 从 YAML 文件加载并校验配置。
     pub fn from_path(path: &Path) -> Result<Self, RosTaskError> {
         let contents = fs::read_to_string(path).map_err(|error| RosTaskError::ConfigLoad {
             message: format!("could not read {}: {error}", path.display()),
@@ -48,6 +66,7 @@ impl RosTaskClientConfig {
         Ok(config)
     }
 
+    /// 校验版本、运行时参数以及设备和 action 名称的唯一性。
     pub fn validate(&self) -> Result<(), RosTaskError> {
         if self.version != 1 {
             return Err(RosTaskError::InvalidConfig {

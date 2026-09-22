@@ -13,6 +13,7 @@ use tokio::sync::watch;
 
 use crate::RosTaskError;
 
+/// 在独立线程中运行 ROS executor，并协调 client shutdown。
 pub struct RosTaskRuntime {
     commands: Arc<ExecutorCommands>,
     stopping: Arc<AtomicBool>,
@@ -31,6 +32,12 @@ enum ExecutorExit {
 }
 
 impl RosTaskRuntime {
+    /// 启动 ROS executor 线程，并等待其 readiness callback 完成。
+    ///
+    /// # 错误
+    ///
+    /// executor 线程无法启动、启动期间退出、panic 或超过 readiness 超时时间
+    /// 时返回 [`RosTaskError`]。
     pub fn start(
         executor: Executor,
         stopping: Arc<AtomicBool>,
@@ -125,6 +132,10 @@ impl RosTaskRuntime {
         })
     }
 
+    /// 请求 executor 停止，并等待其线程完成。
+    ///
+    /// 多次调用是安全的；如果 ROS executor 或 shutdown 协调过程失败，返回
+    /// [`RosTaskError`]。
     pub fn shutdown(&self) -> Result<(), RosTaskError> {
         self.shutdown
             .shutdown(|| {

@@ -14,6 +14,9 @@ use tokio::sync::{broadcast, Mutex};
 use crate::dto::CreateTask;
 
 #[derive(Clone)]
+/// Gateway 共享的运行时状态。
+///
+/// Repository 是任务状态的唯一来源；事件 channel 只传播状态变化通知。
 pub struct AppState {
     inner: Arc<AppStateInner>,
 }
@@ -26,6 +29,7 @@ pub struct AppStateInner {
 }
 
 impl AppState {
+    /// 创建 Gateway 状态并绑定共享的编排器和 Repository。
     pub fn new(orchestrator: Orchestrator, repository: Arc<dyn TaskRepository>) -> Self {
         let (events, _) = broadcast::channel(128);
         Self {
@@ -38,6 +42,7 @@ impl AppState {
         }
     }
 
+    /// 提交任务，并在接受后异步消费执行会话。
     pub async fn create_task(&self, input: CreateTask) -> Result<TaskRecord, OrchestrationError> {
         let (record, session) = self
             .inner
@@ -51,6 +56,7 @@ impl AppState {
         Ok(record)
     }
 
+    /// 返回 Repository 中的全部任务记录。
     pub fn list_tasks(&self) -> Result<Vec<TaskRecord>, OrchestrationError> {
         self.inner
             .repository
@@ -58,6 +64,7 @@ impl AppState {
             .map_err(OrchestrationError::from)
     }
 
+    /// 读取指定任务记录。
     pub fn task(&self, id: &TaskId) -> Result<TaskRecord, OrchestrationError> {
         self.inner
             .repository
@@ -65,6 +72,7 @@ impl AppState {
             .map_err(OrchestrationError::from)
     }
 
+    /// 创建一个接收状态变化通知的订阅者。
     pub fn subscribe(&self) -> broadcast::Receiver<(u64, SystemEvent)> {
         self.inner.events.subscribe()
     }
