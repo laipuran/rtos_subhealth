@@ -1011,6 +1011,7 @@ dependencies = [
  "rosidl_runtime_rs",
  "serde",
  "serde_json",
+ "serde_yaml",
  "thiserror",
  "tokio",
  "tokio-stream",
@@ -1146,6 +1147,19 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "serde_yaml"
+version = "0.9.34+deprecated"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+dependencies = [
+ "indexmap",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
 ]
 
 [[package]]
@@ -1472,6 +1486,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
+name = "unsafe-libyaml"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
+
+[[package]]
 name = "uuid"
 version = "1.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1647,3 +1667,123 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+
+[[patch.unused]]
+name = "action_msgs"
+version = "2.0.4"
+
+[[patch.unused]]
+name = "actionlib_msgs"
+version = "5.3.8"
+
+[[patch.unused]]
+name = "builtin_interfaces"
+version = "2.0.4"
+
+[[patch.unused]]
+name = "composition_interfaces"
+version = "2.0.4"
+
+[[patch.unused]]
+name = "diagnostic_msgs"
+version = "5.3.8"
+
+[[patch.unused]]
+name = "execution"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "gateway"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "geometry_msgs"
+version = "5.3.8"
+
+[[patch.unused]]
+name = "lifecycle_msgs"
+version = "2.0.4"
+
+[[patch.unused]]
+name = "nav_msgs"
+version = "5.3.8"
+
+[[patch.unused]]
+name = "orchestration"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "platform"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "rcl_interfaces"
+version = "2.0.4"
+
+[[patch.unused]]
+name = "rmw_dds_common"
+version = "3.1.1"
+
+[[patch.unused]]
+name = "ros_task_client"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "rosbag2_interfaces"
+version = "0.26.11"
+
+[[patch.unused]]
+name = "rosgraph_msgs"
+version = "2.0.4"
+
+[[patch.unused]]
+name = "sensor"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "service_msgs"
+version = "2.0.4"
+
+[[patch.unused]]
+name = "shape_msgs"
+version = "5.3.8"
+
+[[patch.unused]]
+name = "statistics_msgs"
+version = "2.0.4"
+
+[[patch.unused]]
+name = "std_msgs"
+version = "5.3.8"
+
+[[patch.unused]]
+name = "std_srvs"
+version = "5.3.8"
+
+[[patch.unused]]
+name = "stereo_msgs"
+version = "5.3.8"
+
+[[patch.unused]]
+name = "task_repository"
+version = "0.1.0"
+
+[[patch.unused]]
+name = "tf2_msgs"
+version = "0.36.21"
+
+[[patch.unused]]
+name = "trajectory_msgs"
+version = "5.3.8"
+
+[[patch.unused]]
+name = "type_description_interfaces"
+version = "2.0.4"
+
+[[patch.unused]]
+name = "unique_identifier_msgs"
+version = "2.5.1"
+
+[[patch.unused]]
+name = "visualization_msgs"
+version = "5.3.8"
