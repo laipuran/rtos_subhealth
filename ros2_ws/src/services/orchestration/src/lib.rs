@@ -10,10 +10,10 @@ mod error;
 pub use error::OrchestrationError;
 
 pub trait ExecutionPort: Send + Sync {
-    fn validate(
-        &self,
-        task: &Task,
-    ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + '_>>;
+    fn validate<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = Result<(), ExecutionError>> + Send + 'a>>;
 
     fn execute(
         &self,

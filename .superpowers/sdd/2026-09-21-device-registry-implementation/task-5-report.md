@@ -69,3 +69,12 @@ host with ROS Jazzy and its Rust interface packages installed and sourced.
 - `docker compose -f docker/dev/compose.yaml run --rm dev make check` compiled
   `ros_task_client` successfully. It then failed in the unrelated
   `execution/src/lib.rs:33` lifetime error while compiling `execution`.
+
+## Execution validation lifetime fix (2026-09-22)
+
+- Changed `ExecutionPort::validate` and `Execution`'s implementation to use a
+  shared explicit lifetime for `&self`, `&Task`, and the boxed future. This
+  allows the future to borrow both values safely.
+- `cargo fmt --all --check` and `git diff --check` passed.
+- `docker compose -f docker/dev/compose.yaml run --rm dev make check` passed:
+  formatting, Clippy, and all 11 ROS workspace packages completed successfully.
