@@ -59,3 +59,13 @@ Caused by:
 
 Run the checks inside the configured ROS container after `make build`, or on a
 host with ROS Jazzy and its Rust interface packages installed and sourced.
+
+## Final verification fix (2026-09-22)
+
+- Added the explicit `RosTaskClientConfig` type annotation to the
+  `serde_yaml::from_str` result in `ros_task_client/src/config.rs`. This lets
+  the Rust compiler resolve the deserialization target before `validate()`.
+- `cargo fmt --all --check` and `git diff --check` passed.
+- `docker compose -f docker/dev/compose.yaml run --rm dev make check` compiled
+  `ros_task_client` successfully. It then failed in the unrelated
+  `execution/src/lib.rs:33` lifetime error while compiling `execution`.

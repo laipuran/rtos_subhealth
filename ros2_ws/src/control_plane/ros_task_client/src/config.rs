@@ -40,9 +40,10 @@ impl RosTaskClientConfig {
         let contents = fs::read_to_string(path).map_err(|error| RosTaskError::ConfigLoad {
             message: format!("could not read {}: {error}", path.display()),
         })?;
-        let config = serde_yaml::from_str(&contents).map_err(|error| RosTaskError::ConfigLoad {
-            message: format!("could not parse {}: {error}", path.display()),
-        })?;
+        let config: RosTaskClientConfig =
+            serde_yaml::from_str(&contents).map_err(|error| RosTaskError::ConfigLoad {
+                message: format!("could not parse {}: {error}", path.display()),
+            })?;
         config.validate()?;
         Ok(config)
     }
