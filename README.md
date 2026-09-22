@@ -19,8 +19,8 @@ Gateway、Orchestration、Execution、Repository 和 Sensor 服务位于设备�
 ## 目录
 
 ```text
-docs/contracts/                       业务契约文档
-docs/architecture/                   架构、接口和构建文档
+ docs/interfaces/                     当前模块接口文档
+ docs/decisions/                      当前架构决策和设计动机
 docs/guide/                          使用指南和 ROS mock 指南
 ros2_ws/config/devices.yaml           ROS 设备/action 注册表示例
 ros2_ws/src/control_plane/            ROS task client 控制平面适配
@@ -78,10 +78,8 @@ publisher，不是该注册表中的 execution device。
 
 ## 文档
 
-- [架构总览](docs/architecture/overview.md)
-- [分层边界](docs/architecture/layers.md)
-- [接口契约](docs/architecture/contracts.md)
-- [构建与运行](docs/architecture/build-and-run.md)
+- [文档入口](docs/README.md)
+- [模块接口](docs/interfaces/README.md)
+- [设计决策](docs/decisions/README.md)
+- [构建与运行](docs/guide/getting-started.md)
 - [ROS 2 RFC mock 指南](docs/guide/ros-mocks.md)
-- [Endpoint Adapter](docs/architecture/endpoint-adapters.md)
-- [代码库对比分析](docs/architecture/migration-analysis.md)

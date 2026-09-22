@@ -20,7 +20,7 @@ ros2_ws/src/
 The active interfaces are:
 
 - `task_interfaces/action/ExecuteTask`, the unified task contract;
-- RFC 009 `physio_interfaces/msg/PhysioSample`.
+- `physio_interfaces/msg/PhysioSample`，用于生理传感器 mock。
 
 Planning, diagnosis, and AprilTag perception interfaces are deliberately
 excluded. The execution mock does not provide AprilTag detection.
@@ -102,7 +102,7 @@ Normal feedback uses `state=running`. Each route item produces one
 as `next_tag` (`-1` at the end). Progress is always in `[0.0, 1.0]`. The first
 version has no cancellation path.
 
-### RFC 009: `PhysioSample`
+### `PhysioSample`
 
 | Field | Type |
 | --- | --- |

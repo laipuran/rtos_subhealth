@@ -27,8 +27,9 @@ make run server
 make run endpoint DEVICE_TYPE=<device-type>
 ```
 
-endpoint 类型必须由已注册 adapter 提供。真实设备的 SDK、ROS 发行版和操作系统
-属于 endpoint 自己的部署 profile，不进入控制平面。
+ 当前 endpoint 仅支持 `mock-exec` 和 `mock-sensor`，分别启动执行 mock 和生理
+ 传感器 publisher。它们用于开发验证，不是正式设备 adapter。真实设备的 SDK、ROS
+ 发行版和操作系统不属于当前控制平面实现。
 
 ## 选择镜像
 
@@ -39,5 +40,4 @@ make jazzy   # 构建 Ubuntu 24.04 + ROS Jazzy 镜像并进入容器
 
 ## 文档入口
 
-详见 [`docs/architecture/`](../architecture/)。旧 RFC 和迁移计划仅供历史参考，
-不再作为当前实现依据。
+详见 [`docs/`](../)。历史 RFC 和迁移计划仅供参考，不再作为当前实现依据。
