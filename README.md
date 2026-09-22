@@ -1,57 +1,80 @@
 # ROS Subhealth
 
-设备无关的机器人任务控制系统。WebUI 通过 Gateway 提交任务，由
-Orchestration 按能力选择 endpoint，Execution 使用 Sensor 数据支持行动，
-endpoint adapter 再连接具体设备或仿真 backend。
+设备无关的机器人任务控制系统原型。WebUI 通过 Gateway 提交任务，
+Orchestration 管理任务生命周期，Execution 通过 ROS action client 将任务转发到
+配置的设备。当前仓库还包含 ROS 2 接口定义和用于开发验证的 mock 节点。
 
 ## 架构
 
 ```text
-WebUI → Gateway → Orchestration → Execution → Endpoint Adapter → Backend SDK
-                       ↘ Sensor Access ↗
+WebUI → Gateway → Orchestration → Execution → ROS action server
+                        ↘ Task Repository
 ```
 
-控制平面不依赖任何机器类型。设备操作系统、ROS 发行版、厂商 SDK 和设备类型
-只存在于 endpoint 配置及 adapter 边界。
+Gateway、Orchestration、Execution、Repository 和 Sensor 服务位于设备无关的控制
+平面。当前 Execution 根据任务的 `device_id` 查找
+`ROS_TASK_CLIENT_CONFIG` 指定的 YAML 注册表，并使用其中的 `action_name`；仓库
+目前没有独立的 `adapters/` 目录或正式设备 backend SDK。
 
 ## 目录
 
 ```text
-docs/contracts/                    业务契约文档
-ros2_ws/src/                       RFC 接口与开发验证 mock
-ros2_ws/src/services/gateway/      HTTP/WS 网关
-ros2_ws/src/services/orchestration/ 能力匹配与任务生命周期
-ros2_ws/src/services/execution/     设备无关执行运行时
-ros2_ws/src/services/sensor/        Sensor registry 与 provider 访问
-adapters/                          endpoint adapters（待实现，见 TODO.md）
-webui/                             React/Vite 前端
-docs/architecture/                 权威架构与接口文档
+docs/contracts/                       业务契约文档
+docs/architecture/                   架构、接口和构建文档
+docs/guide/                          使用指南和 ROS mock 指南
+ros2_ws/config/devices.yaml           ROS 设备/action 注册表示例
+ros2_ws/src/control_plane/            ROS task client 控制平面适配
+ros2_ws/src/interfaces/               ROS action/message 接口定义
+ros2_ws/src/mocks/                    mock execution 和 sensor 节点
+ros2_ws/src/services/                 Rust 服务：platform、repository、sensor、
+                                      execution、orchestration、gateway
+webui/                                React/Vite 前端
+docker/dev/                           Humble/Jazzy 开发容器配置
 ```
 
 ## 使用
 
 ```bash
+# 选择一个 ROS 发行版。命令会构建镜像并进入交互容器
+make jazzy   # Ubuntu 24.04 + ROS Jazzy
+# 或 make humble  # Ubuntu 22.04 + ROS Humble
+
+# 以下命令在容器内执行；ROS 环境必须已经由容器提供
+make build
 make check
 make webui
-make humble  # 构建 Humble 镜像并进入容器；或使用 make jazzy
+export ROS_TASK_CLIENT_CONFIG=/workspace/ros2_ws/config/devices.yaml
+make run server
 
-# 以下命令在容器内执行
-make build
-ROS_TASK_CLIENT_CONFIG=/workspace/ros2_ws/config/devices.yaml make run server
+# 在另一个容器终端中运行 mock endpoint
 make run endpoint DEVICE_TYPE=mock-exec
 make run endpoint DEVICE_TYPE=mock-sensor
 ```
 
-`server` 和 `endpoint` 是 `run` 的两种互斥模式。服务端不需要设备类型；运行
-endpoint 时必须指定 `DEVICE_TYPE`。当前 `mock-exec` 和 `mock-sensor` 是 RFC
-工作流开发 mock，并非 canonical `platform` ROS mapper。参数可通过
-`ENDPOINT_ARGS` 传给 ROS 节点。`make humble` 和 `make jazzy` 都会在镜像构建
-完成后直接进入对应的交互容器。
+`server` 和 `endpoint` 是 `run` 的两种互斥模式。服务端需要
+`ROS_TASK_CLIENT_CONFIG`，但不需要 `DEVICE_TYPE`；运行 endpoint 时必须指定
+`DEVICE_TYPE`。当前支持的值只有 `mock-exec` 和 `mock-sensor`，它们分别启动
+`mock_exec_layer_node` 和 `physio_mock_publisher_node`，不是正式设备 adapter。
+参数可通过 `ENDPOINT_ARGS` 传给 ROS 节点，例如：
+
+```bash
+make run endpoint DEVICE_TYPE=mock-exec ENDPOINT_ARGS="-p step_delay_s:=0.2"
+make run endpoint DEVICE_TYPE=mock-sensor \
+  ENDPOINT_ARGS="-p scenario:=anomaly -p rate_hz:=5.0 -p random_seed:=0"
+```
+
+`make build` 在容器内使用 colcon 构建 `ros2_ws/src`；在主机上则构建 Cargo
+workspace。`make humble` 和 `make jazzy` 都会在镜像构建完成后进入对应的交互
+容器。默认 Gateway 监听 `0.0.0.0:5000`，可通过 `GATEWAY_HTTP_PORT` 覆盖。
 
 启动服务端时必须设置 `ROS_TASK_CLIENT_CONFIG`，其值是设备注册表 YAML 的路径，
-例如 `/workspace/ros2_ws/config/devices.yaml`。Gateway 只负责启动 `Execution`；
-`ros_task_client` 在其初始化时读取该环境变量并加载、校验设备注册表。设备 ID 和
-ROS action 名称都在 YAML 中配置，不再由 Gateway 环境变量提供。
+例如 `/workspace/ros2_ws/config/devices.yaml`。`ros_task_client` 初始化时会读取、
+解析并校验该文件；设备 ID 和 ROS action 名称都在 YAML 中配置。示例配置当前注册
+了 `mock_exec`，其 action 为 `/mock_exec/execute_task`。`mock-sensor` 是传感器
+publisher，不是该注册表中的 execution device。
+
+启动 `make webui-dev` 后，可在 <http://localhost:5173> 访问前端；Vite 会将
+`/api` 和 WebSocket 请求代理到默认的 Gateway 地址 `http://127.0.0.1:5000`。
 
 ## 文档
 
@@ -62,4 +85,3 @@ ROS action 名称都在 YAML 中配置，不再由 Gateway 环境变量提供。
 - [ROS 2 RFC mock 指南](docs/guide/ros-mocks.md)
 - [Endpoint Adapter](docs/architecture/endpoint-adapters.md)
 - [代码库对比分析](docs/architecture/migration-analysis.md)
-- [完整重写设计](docs/superpowers/specs/2026-09-17-device-agnostic-rewrite-design.md)
