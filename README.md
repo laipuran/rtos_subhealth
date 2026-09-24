@@ -14,18 +14,20 @@ WebUI → Gateway → Orchestration → Execution → ROS action server
 Gateway、Orchestration、Execution、Repository 和 Sensor 服务位于设备无关的控制
 平面。当前 Execution 根据任务的 `device_id` 查找
 `ROS_TASK_CLIENT_CONFIG` 指定的 YAML 注册表，并使用其中的 `action_name`；仓库
-目前没有独立的 `adapters/` 目录或正式设备 backend SDK。
+目前没有独立的 `adapters/` 目录；正式设备 endpoint 位于控制平面之外，
+通过 ROS action 与控制平面连接，厂商 SDK 不进入上层服务。
 
 ## 目录
 
 ```text
  docs/interfaces/                     当前模块接口文档
  docs/decisions/                      当前架构决策和设计动机
-docs/guide/                          使用指南和 ROS mock 指南
+docs/guide/                          使用指南、ROS mock 和设备 endpoint 指南
 ros2_ws/config/devices.yaml           ROS 设备/action 注册表示例
 ros2_ws/src/control_plane/            ROS task client 控制平面适配
 ros2_ws/src/interfaces/               ROS action/message 接口定义
 ros2_ws/src/mocks/                    mock execution 和 sensor 节点
+ros2_ws/src/endpoints/                正式设备 endpoint 节点
 ros2_ws/src/services/                 Rust 服务：platform、repository、sensor、
                                       execution、orchestration、gateway
 webui/                                React/Vite 前端
@@ -49,12 +51,14 @@ make run server
 # 在另一个容器终端中运行 mock endpoint
 make run endpoint DEVICE_TYPE=mock-exec
 make run endpoint DEVICE_TYPE=mock-sensor
+make run endpoint DEVICE_TYPE=tonypi  # run on the TonyPi host only
 ```
 
 `server` 和 `endpoint` 是 `run` 的两种互斥模式。服务端需要
 `ROS_TASK_CLIENT_CONFIG`，但不需要 `DEVICE_TYPE`；运行 endpoint 时必须指定
-`DEVICE_TYPE`。当前支持的值只有 `mock-exec` 和 `mock-sensor`，它们分别启动
-`mock_exec_layer_node` 和 `physio_mock_publisher_node`，不是正式设备 adapter。
+`DEVICE_TYPE`。当前支持的值为 `mock-exec`、`mock-sensor` 和 `tonypi`；前两者
+分别启动开发 mock，后者只应在 TonyPi 真机主机上启动
+`tonypi_exec_layer_node`。
 参数可通过 `ENDPOINT_ARGS` 传给 ROS 节点，例如：
 
 ```bash
@@ -83,3 +87,4 @@ publisher，不是该注册表中的 execution device。
 - [设计决策](docs/decisions/README.md)
 - [构建与运行](docs/guide/getting-started.md)
 - [ROS 2 RFC mock 指南](docs/guide/ros-mocks.md)
+- [TonyPi 真机执行 endpoint](docs/guide/tonypi-exec.md)

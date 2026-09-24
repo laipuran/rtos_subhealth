@@ -10,4 +10,8 @@ Orchestration 只依赖 `ExecutionPort`。具体 ROS action client 通过 `RosTa
 
 ## 当前范围
 
-当前 registry 是静态 YAML 配置，Execution backend 只有 ROS task client。仓库没有正式的厂商 backend SDK 或通用 endpoint adapter 抽象。
+当前 registry 是静态 YAML 配置，控制平面的 Execution backend 仍然只有
+ROS task client。正式设备 endpoint 位于控制平面之外：`tonypi_exec_layer`
+运行在 TonyPi 主机上，通过同一个 ROS action contract 调用厂商 SDK；厂商 SDK
+不进入 Orchestration、Execution 或 Platform。仓库目前没有通用 endpoint adapter
+抽象。

@@ -9,3 +9,6 @@ devices:
   - id: mock_exec
     action_name: /mock_exec/execute_task
     enabled: true
+  - id: tonypi
+    action_name: /tonypi/execute_task
+    enabled: true

@@ -13,8 +13,12 @@ IN_CONTAINER := $(if $(wildcard /.dockerenv),1,0)
 
 # Overridable settings.
 GATEWAY_HTTP_PORT ?= 5000
-ROS_BUILD_ROOT ?= /ws/$(ROS_DISTRO)
+ROS_BUILD_ROOT ?= $(if $(filter 1,$(IN_CONTAINER)),/ws/$(ROS_DISTRO),$(CURDIR))
 ENDPOINT_ARGS ?=
+ROS_DISTRO ?= jazzy
+ROS_DOMAIN_ID ?= 1
+RMW_IMPLEMENTATION ?= rmw_cyclonedds_cpp
+TONYPI_ROOT ?= /home/pi/TonyPi
 
 .DEFAULT_GOAL := help
 
@@ -101,15 +105,16 @@ run:
 	  else $(DEV) make run server GATEWAY_HTTP_PORT="$(GATEWAY_HTTP_PORT)"; fi ;; \
 	  *" endpoint "*) \
 	    case "$(DEVICE_TYPE)" in \
-	      mock-exec) ros_package=mock_exec_layer; ros_executable=mock_exec_layer_node ;; \
+      mock-exec) ros_package=mock_exec_layer; ros_executable=mock_exec_layer_node ;; \
+      tonypi) ros_package=tonypi_exec_layer; ros_executable=tonypi_exec_layer_node ;; \
 	      mock-sensor) ros_package=physio_mock_publisher; ros_executable=physio_mock_publisher_node ;; \
-	      "") echo "usage: make run endpoint DEVICE_TYPE=<device-type>" >&2; echo "supported DEVICE_TYPE values: mock-exec, mock-sensor" >&2; exit 2 ;; \
-	      *) echo "unsupported DEVICE_TYPE=$(DEVICE_TYPE); supported DEVICE_TYPE values: mock-exec, mock-sensor" >&2; exit 2 ;; \
+      "") echo "usage: make run endpoint DEVICE_TYPE=<device-type>" >&2; echo "supported DEVICE_TYPE values: mock-exec, mock-sensor, tonypi" >&2; exit 2 ;; \
+      *) echo "unsupported DEVICE_TYPE=$(DEVICE_TYPE); supported DEVICE_TYPE values: mock-exec, mock-sensor, tonypi" >&2; exit 2 ;; \
 	    esac; \
 	    test -f "$(ROS_BUILD_ROOT)/install/setup.bash" || { echo "ROS install setup not found at $(ROS_BUILD_ROOT)/install/setup.bash; run 'make build' inside the ROS container first" >&2; exit 2; }; \
 	    source /opt/ros/$(ROS_DISTRO)/setup.bash && \
 	    source "$(ROS_BUILD_ROOT)/install/setup.bash" && \
-	    ros2 run "$$ros_package" "$$ros_executable" $(if $(strip $(ENDPOINT_ARGS)),--ros-args $(ENDPOINT_ARGS),) ;; \
+    ROS_DOMAIN_ID="$(ROS_DOMAIN_ID)" RMW_IMPLEMENTATION="$(RMW_IMPLEMENTATION)" TONYPI_ROOT="$(TONYPI_ROOT)" ros2 run "$$ros_package" "$$ros_executable" $(if $(strip $(ENDPOINT_ARGS)),--ros-args $(ENDPOINT_ARGS),) ;; \
 	  *) echo "usage: make run server | make run endpoint DEVICE_TYPE=<device-type>" >&2; exit 2 ;; \
 	esac
 

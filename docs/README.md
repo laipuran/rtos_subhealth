@@ -9,12 +9,14 @@
 - [Rustdoc 准则](standards/rustdoc.md)：Rust 公开接口注释的语言、格式和内容约定。
 - [快速开始](guide/getting-started.md)：构建、运行和开发环境。
 - [ROS mock 指南](guide/ros-mocks.md)：mock endpoint 和 ROS 接口的运行方式。
+- [TonyPi 真机 endpoint](guide/tonypi-exec.md)：真机 endpoint 的构建、配置和已知限制。
 - [医学资料](medical/)：健康诊断相关的领域资料。
 
 ## 文档边界
 
 - Rust 类型和函数签名：`ros2_ws/src` 中的 Rust 代码。
 - ROS message/action：`ros2_ws/src/interfaces` 中的定义文件。
+- ROS endpoint：`ros2_ws/src/mocks` 和 `ros2_ws/src/endpoints` 中的节点代码。
 - HTTP 和 WebSocket 路由：`ros2_ws/src/services/gateway` 中的代码。
 - 配置格式及校验：`ros2_ws/src/control_plane/ros_task_client/src/config.rs`。
 

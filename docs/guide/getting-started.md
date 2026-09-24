@@ -27,9 +27,12 @@ make run server
 make run endpoint DEVICE_TYPE=<device-type>
 ```
 
- 当前 endpoint 仅支持 `mock-exec` 和 `mock-sensor`，分别启动执行 mock 和生理
- 传感器 publisher。它们用于开发验证，不是正式设备 adapter。真实设备的 SDK、ROS
- 发行版和操作系统不属于当前控制平面实现。
+开发容器中的 endpoint 支持 `mock-exec` 和 `mock-sensor`，分别启动执行 mock
+和生理传感器 publisher。它们只用于开发验证，不是正式设备 adapter。
+
+TonyPi 真机 endpoint 运行在机器人主机上，使用独立的 ROS 2 overlay；它不需要
+Rust 或控制平面的服务。真机构建、DDS 配置和启动方式见
+[TonyPi 真机 endpoint](tonypi-exec.md)。
 
 ## 选择镜像
 
