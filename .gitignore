@@ -177,3 +177,6 @@ __pycache__/
 
 # Package output
 /dist/
+
+# Local development configuration
+.env

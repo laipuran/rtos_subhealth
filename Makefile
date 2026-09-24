@@ -11,6 +11,10 @@ DEV        := $(COMPOSE) run --rm dev
 # Make decides at startup whether it is already inside Docker.
 IN_CONTAINER := $(if $(wildcard /.dockerenv),1,0)
 
+# Load local, uncommitted settings when present. The file uses Make-compatible
+# `KEY=VALUE` lines, which also keeps it usable by Docker Compose.
+-include .env
+
 # Overridable settings.
 GATEWAY_HTTP_PORT ?= 5000
 ROS_BUILD_ROOT ?= $(if $(filter 1,$(IN_CONTAINER)),/ws/$(ROS_DISTRO),$(CURDIR))
@@ -19,6 +23,7 @@ ROS_DISTRO ?= jazzy
 ROS_DOMAIN_ID ?= 1
 RMW_IMPLEMENTATION ?= rmw_cyclonedds_cpp
 TONYPI_ROOT ?= /home/pi/TonyPi
+ROS_TASK_CLIENT_CONFIG ?= ros2_ws/config/devices.yaml
 
 .DEFAULT_GOAL := help
 
@@ -101,8 +106,8 @@ run:
 	    test -f "$(ROS_BUILD_ROOT)/install/setup.bash" || { echo "ROS install setup not found at $(ROS_BUILD_ROOT)/install/setup.bash; run 'make build' inside the ROS container first" >&2; exit 2; }; \
 	    source /opt/ros/$(ROS_DISTRO)/setup.bash && \
 	    source "$(ROS_BUILD_ROOT)/install/setup.bash" && \
-	    GATEWAY_HTTP_PORT="$(GATEWAY_HTTP_PORT)" cargo run -p gateway; \
-	  else $(DEV) make run server GATEWAY_HTTP_PORT="$(GATEWAY_HTTP_PORT)"; fi ;; \
+    GATEWAY_HTTP_PORT="$(GATEWAY_HTTP_PORT)" ROS_TASK_CLIENT_CONFIG="$(ROS_TASK_CLIENT_CONFIG)" cargo run -p gateway; \
+  else $(DEV) make run server GATEWAY_HTTP_PORT="$(GATEWAY_HTTP_PORT)" ROS_TASK_CLIENT_CONFIG="$(ROS_TASK_CLIENT_CONFIG)"; fi ;; \
 	  *" endpoint "*) \
 	    case "$(DEVICE_TYPE)" in \
       mock-exec) ros_package=mock_exec_layer; ros_executable=mock_exec_layer_node ;; \

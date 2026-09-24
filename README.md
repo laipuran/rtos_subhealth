@@ -45,7 +45,6 @@ make jazzy   # Ubuntu 24.04 + ROS Jazzy
 make build
 make check
 make webui
-export ROS_TASK_CLIENT_CONFIG=/workspace/ros2_ws/config/devices.yaml
 make run server
 
 # 在另一个容器终端中运行 mock endpoint
@@ -71,11 +70,25 @@ make run endpoint DEVICE_TYPE=mock-sensor \
 workspace。`make humble` 和 `make jazzy` 都会在镜像构建完成后进入对应的交互
 容器。默认 Gateway 监听 `0.0.0.0:5000`，可通过 `GATEWAY_HTTP_PORT` 覆盖。
 
-启动服务端时必须设置 `ROS_TASK_CLIENT_CONFIG`，其值是设备注册表 YAML 的路径，
-例如 `/workspace/ros2_ws/config/devices.yaml`。`ros_task_client` 初始化时会读取、
-解析并校验该文件；设备 ID 和 ROS action 名称都在 YAML 中配置。示例配置当前注册
-了 `mock_exec`，其 action 为 `/mock_exec/execute_task`。`mock-sensor` 是传感器
-publisher，不是该注册表中的 execution device。
+启动服务端默认使用相对于仓库根目录的
+`ROS_TASK_CLIENT_CONFIG=ros2_ws/config/devices.yaml`。也可以在仓库根目录创建
+`.env` 设置本地默认值（该文件不应提交），例如：
+
+```dotenv
+ROS_TASK_CLIENT_CONFIG=ros2_ws/config/devices.yaml
+GATEWAY_HTTP_PORT=5000
+```
+
+命令行参数仍可覆盖 `.env`，例如：
+
+```bash
+make run server ROS_TASK_CLIENT_CONFIG=ros2_ws/config/production.yaml
+```
+
+`ros_task_client` 初始化时会读取、解析并校验该文件；设备 ID 和 ROS action 名称
+都在 YAML 中配置。示例配置当前注册了 `mock_exec`，其 action 为
+`/mock_exec/execute_task`。`mock-sensor` 是传感器 publisher，不是该注册表中的
+execution device。
 
 启动 `make webui-dev` 后，可在 <http://localhost:5173> 访问前端；Vite 会将
 `/api` 和 WebSocket 请求代理到默认的 Gateway 地址 `http://127.0.0.1:5000`。
