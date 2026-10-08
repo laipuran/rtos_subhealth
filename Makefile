@@ -24,6 +24,8 @@ ROS_DOMAIN_ID ?= 1
 RMW_IMPLEMENTATION ?= rmw_cyclonedds_cpp
 TONYPI_ROOT ?= /home/pi/TonyPi
 ROS_TASK_CLIENT_CONFIG ?= ros2_ws/config/devices.yaml
+ROS_SENSOR_CONFIG ?= ros2_ws/config/sensors.yaml
+MAP_CONFIG ?= ros2_ws/config/maps/default.yaml
 
 .DEFAULT_GOAL := help
 
@@ -44,6 +46,7 @@ help:
 	@echo "  make webui-dev       Run the WebUI dev server"
 	@echo "  make run server      Run the control-plane server"
 	@echo "  make run endpoint DEVICE_TYPE=<device-type>"
+	@echo "  make run agent       Run the Agent HTTP/SSE service"
 	@echo "  make clean           Remove build artifacts"
 	@echo
 	@echo "  endpoint requires DEVICE_TYPE; server and endpoint are mutually exclusive"
@@ -106,8 +109,8 @@ run:
 	    test -f "$(ROS_BUILD_ROOT)/install/setup.bash" || { echo "ROS install setup not found at $(ROS_BUILD_ROOT)/install/setup.bash; run 'make build' inside the ROS container first" >&2; exit 2; }; \
 	    source /opt/ros/$(ROS_DISTRO)/setup.bash && \
 	    source "$(ROS_BUILD_ROOT)/install/setup.bash" && \
-    GATEWAY_HTTP_PORT="$(GATEWAY_HTTP_PORT)" ROS_TASK_CLIENT_CONFIG="$(ROS_TASK_CLIENT_CONFIG)" cargo run -p gateway; \
-  else $(DEV) make run server GATEWAY_HTTP_PORT="$(GATEWAY_HTTP_PORT)" ROS_TASK_CLIENT_CONFIG="$(ROS_TASK_CLIENT_CONFIG)"; fi ;; \
+    GATEWAY_HTTP_PORT="$(GATEWAY_HTTP_PORT)" ROS_TASK_CLIENT_CONFIG="$(ROS_TASK_CLIENT_CONFIG)" ROS_SENSOR_CONFIG="$(ROS_SENSOR_CONFIG)" MAP_CONFIG="$(MAP_CONFIG)" cargo run -p gateway; \
+  else $(DEV) make run server GATEWAY_HTTP_PORT="$(GATEWAY_HTTP_PORT)" ROS_TASK_CLIENT_CONFIG="$(ROS_TASK_CLIENT_CONFIG)" ROS_SENSOR_CONFIG="$(ROS_SENSOR_CONFIG)" MAP_CONFIG="$(MAP_CONFIG)"; fi ;; \
 	  *" endpoint "*) \
 	    case "$(DEVICE_TYPE)" in \
       mock-exec) ros_package=mock_exec_layer; ros_executable=mock_exec_layer_node ;; \
@@ -120,10 +123,11 @@ run:
 	    source /opt/ros/$(ROS_DISTRO)/setup.bash && \
 	    source "$(ROS_BUILD_ROOT)/install/setup.bash" && \
     ROS_DOMAIN_ID="$(ROS_DOMAIN_ID)" RMW_IMPLEMENTATION="$(RMW_IMPLEMENTATION)" TONYPI_ROOT="$(TONYPI_ROOT)" ros2 run "$$ros_package" "$$ros_executable" $(if $(strip $(ENDPOINT_ARGS)),--ros-args $(ENDPOINT_ARGS),) ;; \
-	  *) echo "usage: make run server | make run endpoint DEVICE_TYPE=<device-type>" >&2; exit 2 ;; \
+	  *" agent "*) agent/.venv/bin/python agent/server.py ;; \
+	  *) echo "usage: make run server | make run endpoint DEVICE_TYPE=<device-type> | make run agent" >&2; exit 2 ;; \
 	esac
 
-server endpoint:
+server endpoint agent:
 	@:
 
 ## clean: remove build artifacts

@@ -4,10 +4,12 @@ use execution::Execution;
 use gateway::{app, AppState};
 use orchestration::Orchestrator;
 use platform::TaskRepository;
+use sensor::SensorRegistry;
 use task_repository::InMemoryTaskRepository;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let map = map::load_map()?;
     let port = std::env::var("GATEWAY_HTTP_PORT").unwrap_or_else(|_| "5000".into());
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
 
@@ -15,11 +17,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let repository: Arc<dyn TaskRepository> = Arc::new(InMemoryTaskRepository::new());
     let execution = Arc::new(Execution::init()?);
+    let (sensor_provider, sensor_runtime) = ros_sensor_client::init()?;
+    let mut sensors = SensorRegistry::default();
+    sensors.register(sensor_provider);
     let state = AppState::new(
-        Orchestrator::new(execution.clone(), repository.clone()),
+        Orchestrator::new(execution.clone(), repository.clone(), map)?,
         repository.clone(),
+        Arc::new(sensors),
     );
     axum::serve(listener, app(state)).await?;
+    sensor_runtime.shutdown()?;
     execution.shutdown()?;
     Ok(())
 }

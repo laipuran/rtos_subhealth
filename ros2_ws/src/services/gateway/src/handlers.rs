@@ -1,13 +1,31 @@
 use orchestration::OrchestrationError;
 use platform::TaskId;
 
-use crate::{dto::CreateTask, state::AppState};
+use crate::{
+    dto::{CreateTask, SensorReading},
+    state::AppState,
+};
 use axum::{
     extract::{Path, State, WebSocketUpgrade},
     http::StatusCode,
     response::IntoResponse,
     Json,
 };
+
+pub async fn list_tags(State(state): State<AppState>) -> Json<Vec<map::MapNode>> {
+    Json(state.tags().await)
+}
+
+pub async fn list_sensors(State(state): State<AppState>) -> Json<Vec<platform::SensorDescriptor>> {
+    Json(state.sensors())
+}
+
+pub async fn get_sensor(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<SensorReading>, StatusCode> {
+    state.sensor(&id).map(Json).ok_or(StatusCode::NOT_FOUND)
+}
 
 pub async fn list_tasks(
     State(state): State<AppState>,
@@ -62,6 +80,7 @@ fn submission_status(error: OrchestrationError) -> StatusCode {
         | OrchestrationError::Duplicate
         | OrchestrationError::TerminalTask => StatusCode::CONFLICT,
         OrchestrationError::InvalidTarget => StatusCode::BAD_REQUEST,
+        OrchestrationError::Map(_) | OrchestrationError::Pathfinding(_) => StatusCode::BAD_REQUEST,
         OrchestrationError::Repository(_) => StatusCode::INTERNAL_SERVER_ERROR,
         OrchestrationError::Execution(_) => StatusCode::BAD_GATEWAY,
         OrchestrationError::UnknownTask => StatusCode::INTERNAL_SERVER_ERROR,

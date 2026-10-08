@@ -9,5 +9,7 @@
   <depend>orchestration</depend>
   <depend>task_repository</depend>
   <depend>execution</depend>
+  <depend>sensor</depend>
+  <depend>ros_sensor_client</depend>
   <export><build_type>ament_cargo</build_type></export>
 </package>
